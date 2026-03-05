@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Set, Tuple
 import random
 
 app = FastAPI()
@@ -68,12 +68,15 @@ async def new_game(request: NewGameRequest):
 
 @app.post("/api/click")
 async def click_block(block_id: int, current_state: GameState):
-    """Handle block click - destroy adjacent same-color blocks."""
+    """Handle destructor click - destroy adjacent same-color blocks."""
+    rows = len(current_state.board)
+    cols = len(current_state.board[0]) if rows > 0 else 0
+    
     # Find the clicked block
     clicked = None
     for row in current_state.board:
         for block in row:
-            if block.id == block_id:
+            if block and block.id == block_id:
                 clicked = block
                 break
         if clicked:
@@ -82,17 +85,39 @@ async def click_block(block_id: int, current_state: GameState):
     if not clicked:
         return {"error": "Block not found"}
     
-    # Find all adjacent same-color blocks (flood fill)
-    to_destroy = find_adjacent(current_state.board, clicked.row, clicked.col, clicked.color)
+    # Only destructors can be clicked
+    if clicked.block_type != "destructor":
+        return {"error": "Only destructors can be clicked"}
     
+    # Get clicked block's color
+    target_color = clicked.color
+    
+    # Find blocks to destroy: clicked destructor + adjacent same-color blocks
+    to_destroy: Set[int] = {clicked.id}
+    
+    # Check 4 adjacent cells (up, down, left, right)
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # up, down, left, right
+    
+    for dr, dc in directions:
+        adj_row = clicked.row + dr
+        adj_col = clicked.col + dc
+        
+        # Check bounds
+        if 0 <= adj_row < rows and 0 <= adj_col < cols:
+            adj_block = current_state.board[adj_row][adj_col]
+            # Destroy if same color (can be destructor or gamepiece)
+            if adj_block and adj_block.color == target_color:
+                to_destroy.add(adj_block.id)
+    
+    # Need at least 2 blocks to destroy (destructor + at least 1 adjacent)
     if len(to_destroy) < 2:
-        return {"error": "Need at least 2 adjacent blocks"}
+        return {"error": "Need at least 1 adjacent same-color block"}
     
     # Remove blocks and apply gravity
     new_board = remove_blocks(current_state.board, to_destroy)
     new_board = apply_gravity(new_board)
     
-    # Calculate score
+    # Calculate score: more blocks = more points (exponential bonus)
     points = len(to_destroy) * len(to_destroy) * 10
     
     return GameState(
@@ -101,42 +126,11 @@ async def click_block(block_id: int, current_state: GameState):
         moves=current_state.moves + 1
     )
 
-def find_adjacent(board: List[List[Block]], row: int, col: int, color: str) -> List[Block]:
-    """Flood fill to find all connected same-color blocks."""
-    if row < 0 or row >= len(board) or col < 0 or col >= len(board[0]):
-        return []
-    
-    target = board[row][col]
-    if target is None or target.color != color:
-        return []
-    
-    visited = set()
-    stack = [(row, col)]
-    result = []
-    
-    while stack:
-        r, c = stack.pop()
-        if (r, c) in visited:
-            continue
-        visited.add((r, c))
-        
-        block = board[r][c]
-        if block and block.color == color:
-            result.append(block)
-            # Check 4 directions
-            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                nr, nc = r + dr, c + dc
-                if 0 <= nr < len(board) and 0 <= nc < len(board[0]):
-                    stack.append((nr, nc))
-    
-    return result
-
-def remove_blocks(board: List[List[Block]], blocks: List[Block]) -> List[List[Block]]:
+def remove_blocks(board: List[List[Block]], block_ids: Set[int]) -> List[List[Block]]:
     """Remove blocks from the board."""
-    block_ids = {b.id for b in blocks}
     new_board = []
     for row in board:
-        new_row = [b if b.id not in block_ids else None for b in row]
+        new_row = [b if b is None or b.id not in block_ids else None for b in row]
         new_board.append(new_row)
     return new_board
 
