@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react'
+import './App.css'
 
 const COLORS = {
-  red: '#ef4444',
-  blue: '#3b82f6',
-  green: '#22c55e',
-  yellow: '#eab308',
-  purple: '#a855f7'
+  red: '#E53935',
+  blue: '#1E88E5',
+  yellow: '#FDD835',
+  green: '#43A047',
+  purple: '#8E24AA'
 }
+
+const BOARD_SIZE = 8
 
 function App() {
   const [board, setBoard] = useState([])
@@ -24,8 +27,8 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          rows: 8,
-          cols: 8,
+          rows: BOARD_SIZE,
+          cols: BOARD_SIZE,
           colors: ['red', 'blue', 'green', 'yellow', 'purple']
         })
       })
@@ -78,20 +81,18 @@ function App() {
       
       {message && <div className="message">{message}</div>}
       
-      <div className="board">
-        {board.map((row, rowIdx) => (
-          <div key={rowIdx} className="row">
-            {row.map((block, colIdx) => (
-              <div
-                key={block?.id || `${rowIdx}-${colIdx}`}
-                className={`block ${block ? 'filled' : 'empty'}`}
-                style={{
-                  backgroundColor: block ? COLORS[block.color] : 'transparent'
-                }}
-                onClick={() => handleClick(block)}
-              />
-            ))}
-          </div>
+      <div className="board" style={{ 
+        gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`
+      }}>
+        {board.flat().map((block, idx) => (
+          <div
+            key={block?.id || `empty-${idx}`}
+            className={`cell ${block ? 'filled' : 'empty'}`}
+            style={{
+              backgroundColor: block ? COLORS[block.color] : '#1a1a2e'
+            }}
+            onClick={() => handleClick(block)}
+          />
         ))}
       </div>
       
