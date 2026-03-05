@@ -304,3 +304,9 @@ h1 {
   background: linear-gradient(135deg, #FDD835 0%, #FF9800 100%);
   color: #1a1a2e;
 }
+
+.level-info {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-bottom: 10px;
+}
