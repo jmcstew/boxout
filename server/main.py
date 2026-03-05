@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Set, Optional
+from typing import List, Set
 import random
 
 app = FastAPI()
@@ -15,6 +15,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Color point values
+COLOR_POINTS = {
+    "red": 10,
+    "blue": 15,
+    "yellow": 20,
+    "green": 25,
+    "purple": 30
+}
+
 # Game models
 class Block(BaseModel):
     id: int
@@ -27,7 +36,7 @@ class GameState(BaseModel):
     board: List[List[Block]]
     score: int
     moves: int
-    status: str = "playing"  # "playing", "won", "lost"
+    status: str = "playing"
 
 class NewGameRequest(BaseModel):
     rows: int = 8
@@ -52,12 +61,10 @@ def generate_board(rows: int, cols: int, colors: List[str], destructor_chance: f
                 block_type=block_type
             ))
             block_id += 1
-        board.append(row_blocks)
     return board
 
 def check_game_status(board: List[List[Block]]) -> str:
     """Check if player won or lost."""
-    # Count blocks
     total_blocks = 0
     destructors = 0
     gamepieces = 0
@@ -71,15 +78,10 @@ def check_game_status(board: List[List[Block]]) -> str:
                 else:
                     gamepieces += 1
     
-    # Win: no blocks remaining
     if total_blocks == 0:
         return "won"
-    
-    # Lose: no destructors but game pieces remain
     if destructors == 0 and gamepieces > 0:
         return "lost"
-    
-    # Still playing
     return "playing"
 
 @app.get("/")
@@ -132,20 +134,21 @@ async def click_block(block_id: int, current_state: GameState):
     if len(to_destroy) < 2:
         return {"error": "Need at least 1 adjacent same-color block"}
     
+    # Calculate points based on color
+    points_per_block = COLOR_POINTS.get(target_color, 10)
+    total_points = len(to_destroy) * points_per_block
+    
     # Remove blocks, apply gravity, fill with new blocks
     new_board = remove_blocks(current_state.board, to_destroy)
     new_board = apply_gravity(new_board)
     new_board = fill_from_top(new_board)
-    
-    # Score: exponential bonus
-    points = len(to_destroy) * len(to_destroy) * 10
     
     # Check win/lose status
     status = check_game_status(new_board)
     
     return GameState(
         board=new_board,
-        score=current_state.score + points,
+        score=current_state.score + total_points,
         moves=current_state.moves + 1,
         status=status
     )
@@ -173,7 +176,6 @@ def apply_gravity(board: List[List[Block]]) -> List[List[Block]]:
             if board[row][col] is not None:
                 new_row.append(board[row][col])
         
-        # Fill from bottom
         for i, block in enumerate(new_row):
             new_board[rows - len(new_row) + i][col] = block
     
@@ -188,7 +190,6 @@ def fill_from_top(board: List[List[Block]]) -> List[List[Block]]:
     rows = len(board)
     colors = ["red", "blue", "green", "yellow", "purple"]
     
-    # Find max block_id
     max_id = 0
     for row in board:
         for block in row:
@@ -201,7 +202,6 @@ def fill_from_top(board: List[List[Block]]) -> List[List[Block]]:
         new_row = []
         for col_idx, block in enumerate(row):
             if block is None:
-                # Generate new block
                 color = random.choice(colors)
                 block_type = "destructor" if random.random() < 0.2 else "gamepiece"
                 new_row.append(Block(
