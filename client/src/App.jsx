@@ -19,17 +19,44 @@ const DARKER_COLORS = {
 
 const BOARD_SIZE = 8
 
+// World map with 15 levels
+const TOTAL_LEVELS = 15
+const levelsPerRow = 5
+
 function App() {
+  const [screen, setScreen] = useState('map') // 'map' or 'game'
   const [board, setBoard] = useState([])
   const [score, setScore] = useState(0)
   const [moves, setMoves] = useState(0)
   const [level, setLevel] = useState(1)
+  const [maxUnlocked, setMaxUnlocked] = useState(1)
+  const [completedLevels, setCompletedLevels] = useState({})
   const [status, setStatus] = useState('playing')
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    newGame()
+    // Load saved progress from localStorage
+    const saved = localStorage.getItem('boxout_progress')
+    if (saved) {
+      const data = JSON.parse(saved)
+      setMaxUnlocked(data.maxUnlocked || 1)
+      setCompletedLevels(data.completed || {})
+    }
   }, [])
+
+  const saveProgress = (unlocked, completed) => {
+    localStorage.setItem('boxout_progress', JSON.stringify({
+      maxUnlocked: unlocked,
+      completed: completed
+    }))
+  }
+
+  const startLevel = (lvl) => {
+    if (lvl > maxUnlocked) return
+    setLevel(lvl)
+    newGame()
+    setScreen('game')
+  }
 
   const newGame = async () => {
     try {
@@ -50,13 +77,29 @@ function App() {
       setStatus(data.status)
       setMessage('')
     } catch (err) {
-      setMessage('Backend not running. Start server with: cd server && uvicorn main:app --reload')
+      setMessage('Backend not running')
     }
   }
 
+  const handleLevelComplete = () => {
+    const newCompleted = { ...completedLevels, [level]: true }
+    setCompletedLevels(newCompleted)
+    
+    const nextUnlocked = Math.max(maxUnlocked, level + 1)
+    setMaxUnlocked(nextUnlocked)
+    saveProgress(nextUnlocked, newCompleted)
+  }
+
+  const backToMap = () => {
+    setScreen('map')
+  }
+
   const nextLevel = () => {
-    setLevel(level + 1)
-    newGame()
+    const nextLvl = level + 1
+    if (nextLvl <= TOTAL_LEVELS) {
+      setLevel(nextLvl)
+      newGame()
+    }
   }
 
   const handleClick = async (block) => {
@@ -98,14 +141,44 @@ function App() {
     return colorMap[block.color]
   }
 
-  return (
-    <div className="game-container">
+  // Render world map
+  const renderMap = () => (
+    <div className="world-map">
       <h1>Boxout</h1>
+      <p className="map-subtitle">Select a Level</p>
       
-      {/* Level indicator */}
+      <div className="level-nodes">
+        {Array.from({ length: TOTAL_LEVELS }, (_, i) => i + 1).map(lvl => {
+          const isCompleted = completedLevels[lvl]
+          const isCurrent = level === lvl && screen === 'game'
+          const isUnlocked = lvl <= maxUnlocked
+          const isLocked = !isUnlocked
+          
+          return (
+            <button
+              key={lvl}
+              className={`level-node ${isCompleted ? 'completed' : ''} ${isCurrent ? 'current' : ''} ${isLocked ? 'locked' : ''}`}
+              onClick={() => startLevel(lvl)}
+              disabled={isLocked}
+            >
+              {isCompleted ? '✓' : lvl}
+            </button>
+          )
+        })}
+      </div>
+      
+      <div className="map-path" />
+    </div>
+  )
+
+  // Render game screen
+  const renderGame = () => (
+    <div className="game-container">
+      <button className="back-btn" onClick={backToMap}>← Map</button>
+      
+      <h1>Boxout</h1>
       <div className="level-display">Level {level}</div>
       
-      {/* Score Display */}
       <div className="score-display">
         <span className="score-label">Score</span>
         <span className="score-value">{score}</span>
@@ -122,18 +195,12 @@ function App() {
               <div
                 key={block?.id || `empty-${idx}`}
                 className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''}`}
-                style={{
-                  backgroundColor: getBlockColor(block)
-                }}
+                style={{ backgroundColor: getBlockColor(block) }}
                 onClick={() => handleClick(block)}
-                title={block?.block_type === 'destructor' ? 'Destructor - Click to destroy!' : 'Game Piece'}
+                title={block?.block_type === 'destructor' ? 'Destructor!' : 'Game Piece'}
               />
             ))}
           </div>
-          
-          <button onClick={newGame} className="new-game-btn">
-            New Game
-          </button>
         </>
       )}
       
@@ -141,19 +208,26 @@ function App() {
         <div className="overlay victory">
           <div className="confetti">🎊</div>
           <h2>Level Complete!</h2>
-          <p className="final-score">Final Score: {score}</p>
+          <p className="final-score">Score: {score}</p>
           <p>Moves: {moves}</p>
-          <button onClick={nextLevel} className="new-game-btn next-level-btn">
-            Next Level →
-          </button>
+          
+          {level < TOTAL_LEVELS ? (
+            <button onClick={nextLevel} className="new-game-btn next-level-btn">
+              Next Level →
+            </button>
+          ) : (
+            <button onClick={backToMap} className="new-game-btn">
+              Back to Map
+            </button>
+          )}
         </div>
       )}
       
       {status === 'lost' && (
         <div className="overlay gameover">
           <h2>💀 Game Over</h2>
-          <p>No destructors remaining!</p>
-          <p className="final-score">Final Score: {score}</p>
+          <p>No destructors left!</p>
+          <p className="final-score">Score: {score}</p>
           <button onClick={newGame} className="new-game-btn">
             Try Again
           </button>
@@ -161,6 +235,8 @@ function App() {
       )}
     </div>
   )
+
+  return screen === 'map' ? renderMap() : renderGame()
 }
 
 export default App
