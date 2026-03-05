@@ -23,6 +23,7 @@ function App() {
   const [board, setBoard] = useState([])
   const [score, setScore] = useState(0)
   const [moves, setMoves] = useState(0)
+  const [level, setLevel] = useState(1)
   const [status, setStatus] = useState('playing')
   const [message, setMessage] = useState('')
 
@@ -51,6 +52,11 @@ function App() {
     } catch (err) {
       setMessage('Backend not running. Start server with: cd server && uvicorn main:app --reload')
     }
+  }
+
+  const nextLevel = () => {
+    setLevel(level + 1)
+    newGame()
   }
 
   const handleClick = async (block) => {
@@ -96,6 +102,9 @@ function App() {
     <div className="game-container">
       <h1>Boxout</h1>
       
+      {/* Level indicator */}
+      <div className="level-display">Level {level}</div>
+      
       {/* Score Display */}
       <div className="score-display">
         <span className="score-label">Score</span>
@@ -130,11 +139,12 @@ function App() {
       
       {status === 'won' && (
         <div className="overlay victory">
-          <h2>🎉 Level Complete!</h2>
+          <div className="confetti">🎊</div>
+          <h2>Level Complete!</h2>
           <p className="final-score">Final Score: {score}</p>
           <p>Moves: {moves}</p>
-          <button onClick={newGame} className="new-game-btn">
-            Play Again
+          <button onClick={nextLevel} className="new-game-btn next-level-btn">
+            Next Level →
           </button>
         </div>
       )}
