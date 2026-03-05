@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Set, Tuple
+from typing import List, Set
 import random
 
 app = FastAPI()
@@ -21,7 +21,7 @@ class Block(BaseModel):
     color: str
     row: int
     col: int
-    block_type: str = "gamepiece"  # "destructor" or "gamepiece"
+    block_type: str = "gamepiece"
 
 class GameState(BaseModel):
     board: List[List[Block]]
@@ -32,9 +32,7 @@ class NewGameRequest(BaseModel):
     rows: int = 8
     cols: int = 8
     colors: List[str] = ["red", "blue", "green", "yellow", "purple"]
-    destructor_chance: float = 0.2  # 20% destructors
-
-COLORS = ["red", "blue", "green", "yellow", "purple"]
+    destructor_chance: float = 0.2
 
 def generate_board(rows: int, cols: int, colors: List[str], destructor_chance: float = 0.2) -> List[List[Block]]:
     """Generate a new game board with random colored blocks."""
@@ -85,39 +83,33 @@ async def click_block(block_id: int, current_state: GameState):
     if not clicked:
         return {"error": "Block not found"}
     
-    # Only destructors can be clicked
     if clicked.block_type != "destructor":
         return {"error": "Only destructors can be clicked"}
     
-    # Get clicked block's color
     target_color = clicked.color
-    
-    # Find blocks to destroy: clicked destructor + adjacent same-color blocks
     to_destroy: Set[int] = {clicked.id}
     
-    # Check 4 adjacent cells (up, down, left, right)
-    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # up, down, left, right
+    # Check 4 adjacent cells
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
     
     for dr, dc in directions:
         adj_row = clicked.row + dr
         adj_col = clicked.col + dc
         
-        # Check bounds
         if 0 <= adj_row < rows and 0 <= adj_col < cols:
             adj_block = current_state.board[adj_row][adj_col]
-            # Destroy if same color (can be destructor or gamepiece)
             if adj_block and adj_block.color == target_color:
                 to_destroy.add(adj_block.id)
     
-    # Need at least 2 blocks to destroy (destructor + at least 1 adjacent)
     if len(to_destroy) < 2:
         return {"error": "Need at least 1 adjacent same-color block"}
     
-    # Remove blocks and apply gravity
+    # Remove blocks, apply gravity, fill with new blocks
     new_board = remove_blocks(current_state.board, to_destroy)
     new_board = apply_gravity(new_board)
+    new_board = fill_from_top(new_board, current_state.board[0][0].color if current_state.board and current_state.board[0] else "red")
     
-    # Calculate score: more blocks = more points (exponential bonus)
+    # Score: exponential bonus
     points = len(to_destroy) * len(to_destroy) * 10
     
     return GameState(
@@ -152,6 +144,48 @@ def apply_gravity(board: List[List[Block]]) -> List[List[Block]]:
         # Fill from bottom
         for i, block in enumerate(new_row):
             new_board[rows - len(new_row) + i][col] = block
+    
+    return new_board
+
+def fill_from_top(board: List[List[Block]], default_color: str) -> List[List[Block]]:
+    """Fill empty spaces at top with new random blocks."""
+    if not board:
+        return board
+    
+    cols = len(board[0])
+    rows = len(board)
+    colors = ["red", "blue", "green", "yellow", "purple"]
+    
+    # Find max block_id to continue from
+    max_id = 0
+    for row in board:
+        for block in row:
+            if block and block.id > max_id:
+                max_id = block.id
+    next_id = max_id + 1
+    
+    new_board = []
+    for row_idx, row in enumerate(board):
+        new_row = []
+        for col_idx, block in enumerate(row):
+            if block is None:
+                # Generate new block at top
+                color = random.choice(colors)
+                block_type = "destructor" if random.random() < 0.2 else "gamepiece"
+                new_row.append(Block(
+                    id=next_id,
+                    color=color,
+                    row=row_idx,
+                    col=col_idx,
+                    block_type=block_type
+                ))
+                next_id += 1
+            else:
+                # Update row/col to match new position
+                block.row = row_idx
+                block.col = col_idx
+                new_row.append(block)
+        new_board.append(new_row)
     
     return new_board
 

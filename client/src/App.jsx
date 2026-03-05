@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 
 const COLORS = {
@@ -24,6 +24,8 @@ function App() {
   const [score, setScore] = useState(0)
   const [moves, setMoves] = useState(0)
   const [message, setMessage] = useState('')
+  const [isAnimating, setIsAnimating] = useState(false)
+  const prevBoardRef = useRef([])
 
   useEffect(() => {
     newGame()
@@ -46,18 +48,18 @@ function App() {
       setScore(data.score)
       setMoves(data.moves)
       setMessage('')
+      prevBoardRef.current = data.board
     } catch (err) {
       setMessage('Backend not running. Start server with: cd server && uvicorn main:app --reload')
     }
   }
 
   const handleClick = async (block) => {
-    // Only destructors are clickable
     if (!block || block.block_type !== 'destructor') {
-      console.log('Clicked non-destructor block - ignoring')
       return
     }
     
+    setIsAnimating(true)
     console.log('Destructor clicked:', {
       id: block.id,
       color: block.color,
@@ -77,15 +79,21 @@ function App() {
       
       if (data.error) {
         setMessage(data.error)
+        setIsAnimating(false)
         return
       }
       
+      prevBoardRef.current = board
       setBoard(data.board)
       setScore(data.score)
       setMoves(data.moves)
       setMessage('')
+      
+      // Animation duration
+      setTimeout(() => setIsAnimating(false), 300)
     } catch (err) {
       setMessage('Error communicating with server')
+      setIsAnimating(false)
     }
   }
 
@@ -106,7 +114,7 @@ function App() {
       
       {message && <div className="message">{message}</div>}
       
-      <div className="board" style={{ 
+      <div className={`board ${isAnimating ? 'falling' : ''}`} style={{ 
         gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`
       }}>
         {board.flat().map((block, idx) => (
