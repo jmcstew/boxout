@@ -68,23 +68,22 @@ h1 {
   width: 50px;
   height: 50px;
   border-radius: 6px;
-  cursor: pointer;
   transition: transform 0.1s, box-shadow 0.1s;
   border: 2px solid rgba(0, 0, 0, 0.2);
 }
 
-.cell.filled:hover {
-  transform: scale(1.08);
-  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.3);
+/* Destructor blocks - clickable */
+.cell.destructor {
+  border: 3px solid rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+}
+
+.cell.destructor:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
   z-index: 1;
 }
 
-/* Destructor blocks - slightly larger border to distinguish */
-.cell.destructor {
-  border: 3px solid rgba(255, 255, 255, 0.4);
-}
-
-/* Add a subtle pattern to destructors */
 .cell.destructor::after {
   content: '✕';
   display: flex;
@@ -95,6 +94,16 @@ h1 {
   font-size: 1.2rem;
   font-weight: bold;
   color: rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+}
+
+/* Game pieces - not clickable */
+.cell.gamepiece {
+  cursor: not-allowed;
+}
+
+.cell.gamepiece:hover {
+  transform: scale(1.02);
 }
 
 .cell.empty {

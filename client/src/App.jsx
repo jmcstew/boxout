@@ -52,7 +52,17 @@ function App() {
   }
 
   const handleClick = async (block) => {
-    if (!block) return
+    // Only destructors are clickable
+    if (!block || block.block_type !== 'destructor') {
+      console.log('Clicked non-destructor block - ignoring')
+      return
+    }
+    
+    console.log('Destructor clicked:', {
+      id: block.id,
+      color: block.color,
+      position: `(${block.row}, ${block.col})`
+    })
     
     try {
       const response = await fetch('/api/click', {
@@ -107,7 +117,7 @@ function App() {
               backgroundColor: getBlockColor(block)
             }}
             onClick={() => handleClick(block)}
-            title={block?.block_type === 'destructor' ? 'Destructor' : 'Game Piece'}
+            title={block?.block_type === 'destructor' ? 'Destructor - Click to destroy!' : 'Game Piece'}
           />
         ))}
       </div>
