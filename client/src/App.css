@@ -22,7 +22,7 @@ body {
 
 h1 {
   font-size: 3.5rem;
-  margin-bottom: 30px;
+  margin-bottom: 20px;
   background: linear-gradient(135deg, #E53935 0%, #1E88E5 50%, #8E24AA 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -30,18 +30,46 @@ h1 {
   letter-spacing: 4px;
 }
 
+/* Score Display */
+.score-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.score-label {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.score-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #FDD835 0%, #FF9800 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 0 30px rgba(253, 216, 53, 0.3);
+  min-width: 120px;
+  text-align: center;
+}
+
 .stats {
   display: flex;
   justify-content: center;
   gap: 40px;
-  margin-bottom: 30px;
-  font-size: 1.3rem;
+  margin-bottom: 20px;
+  font-size: 1.1rem;
   font-weight: 500;
 }
 
 .stats span {
-  background: rgba(255, 255, 255, 0.1);
-  padding: 10px 24px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 8px 20px;
   border-radius: 8px;
 }
 
@@ -149,6 +177,12 @@ h1 {
 .overlay p {
   font-size: 1.3rem;
   margin-bottom: 8px;
+}
+
+.overlay .final-score {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 16px 0;
 }
 
 .new-game-btn {

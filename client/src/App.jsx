@@ -23,7 +23,7 @@ function App() {
   const [board, setBoard] = useState([])
   const [score, setScore] = useState(0)
   const [moves, setMoves] = useState(0)
-  const [status, setStatus] = useState('playing') // 'playing', 'won', 'lost'
+  const [status, setStatus] = useState('playing')
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -59,12 +59,6 @@ function App() {
     }
     
     if (status !== 'playing') return
-    
-    console.log('Destructor clicked:', {
-      id: block.id,
-      color: block.color,
-      position: `(${block.row}, ${block.col})`
-    })
     
     try {
       const response = await fetch('/api/click', {
@@ -102,35 +96,42 @@ function App() {
     <div className="game-container">
       <h1>Boxout</h1>
       
-      <div className="stats">
-        <span>Score: {score}</span>
-        <span>Moves: {moves}</span>
+      {/* Score Display */}
+      <div className="score-display">
+        <span className="score-label">Score</span>
+        <span className="score-value">{score}</span>
       </div>
       
       {message && <div className="message">{message}</div>}
       
       {status === 'playing' && (
-        <div className="board" style={{ 
-          gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`
-        }}>
-          {board.flat().map((block, idx) => (
-            <div
-              key={block?.id || `empty-${idx}`}
-              className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''}`}
-              style={{
-                backgroundColor: getBlockColor(block)
-              }}
-              onClick={() => handleClick(block)}
-              title={block?.block_type === 'destructor' ? 'Destructor - Click to destroy!' : 'Game Piece'}
-            />
-          ))}
-        </div>
+        <>
+          <div className="board" style={{ 
+            gridTemplateColumns: `repeat(${BOARD_SIZE}, 1fr)`
+          }}>
+            {board.flat().map((block, idx) => (
+              <div
+                key={block?.id || `empty-${idx}`}
+                className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''}`}
+                style={{
+                  backgroundColor: getBlockColor(block)
+                }}
+                onClick={() => handleClick(block)}
+                title={block?.block_type === 'destructor' ? 'Destructor - Click to destroy!' : 'Game Piece'}
+              />
+            ))}
+          </div>
+          
+          <button onClick={newGame} className="new-game-btn">
+            New Game
+          </button>
+        </>
       )}
       
       {status === 'won' && (
         <div className="overlay victory">
           <h2>🎉 Level Complete!</h2>
-          <p>Final Score: {score}</p>
+          <p className="final-score">Final Score: {score}</p>
           <p>Moves: {moves}</p>
           <button onClick={newGame} className="new-game-btn">
             Play Again
@@ -142,17 +143,11 @@ function App() {
         <div className="overlay gameover">
           <h2>💀 Game Over</h2>
           <p>No destructors remaining!</p>
-          <p>Final Score: {score}</p>
+          <p className="final-score">Final Score: {score}</p>
           <button onClick={newGame} className="new-game-btn">
             Try Again
           </button>
         </div>
-      )}
-      
-      {status === 'playing' && (
-        <button onClick={newGame} className="new-game-btn">
-          New Game
-        </button>
       )}
     </div>
   )
