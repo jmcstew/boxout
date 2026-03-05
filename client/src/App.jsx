@@ -9,6 +9,14 @@ const COLORS = {
   purple: '#8E24AA'
 }
 
+const DARKER_COLORS = {
+  red: '#B71C1C',
+  blue: '#0D47A1',
+  yellow: '#F9A825',
+  green: '#2E7D32',
+  purple: '#6A1B9A'
+}
+
 const BOARD_SIZE = 8
 
 function App() {
@@ -29,7 +37,8 @@ function App() {
         body: JSON.stringify({
           rows: BOARD_SIZE,
           cols: BOARD_SIZE,
-          colors: ['red', 'blue', 'green', 'yellow', 'purple']
+          colors: ['red', 'blue', 'green', 'yellow', 'purple'],
+          destructor_chance: 0.2
         })
       })
       const data = await response.json()
@@ -70,6 +79,12 @@ function App() {
     }
   }
 
+  const getBlockColor = (block) => {
+    if (!block) return 'transparent'
+    const colorMap = block.block_type === 'destructor' ? DARKER_COLORS : COLORS
+    return colorMap[block.color]
+  }
+
   return (
     <div className="game-container">
       <h1>Boxout</h1>
@@ -87,11 +102,12 @@ function App() {
         {board.flat().map((block, idx) => (
           <div
             key={block?.id || `empty-${idx}`}
-            className={`cell ${block ? 'filled' : 'empty'}`}
+            className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''}`}
             style={{
-              backgroundColor: block ? COLORS[block.color] : '#1a1a2e'
+              backgroundColor: getBlockColor(block)
             }}
             onClick={() => handleClick(block)}
+            title={block?.block_type === 'destructor' ? 'Destructor' : 'Game Piece'}
           />
         ))}
       </div>

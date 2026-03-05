@@ -21,6 +21,7 @@ class Block(BaseModel):
     color: str
     row: int
     col: int
+    block_type: str = "gamepiece"  # "destructor" or "gamepiece"
 
 class GameState(BaseModel):
     board: List[List[Block]]
@@ -31,21 +32,25 @@ class NewGameRequest(BaseModel):
     rows: int = 8
     cols: int = 8
     colors: List[str] = ["red", "blue", "green", "yellow", "purple"]
+    destructor_chance: float = 0.2  # 20% destructors
 
 COLORS = ["red", "blue", "green", "yellow", "purple"]
 
-def generate_board(rows: int, cols: int, colors: List[str]) -> List[List[Block]]:
+def generate_board(rows: int, cols: int, colors: List[str], destructor_chance: float = 0.2) -> List[List[Block]]:
     """Generate a new game board with random colored blocks."""
     board = []
     block_id = 0
     for row in range(rows):
         row_blocks = []
         for col in range(cols):
+            color = random.choice(colors)
+            block_type = "destructor" if random.random() < destructor_chance else "gamepiece"
             row_blocks.append(Block(
                 id=block_id,
-                color=random.choice(colors),
+                color=color,
                 row=row,
-                col=col
+                col=col,
+                block_type=block_type
             ))
             block_id += 1
         board.append(row_blocks)
@@ -58,7 +63,7 @@ async def root():
 @app.post("/api/new-game")
 async def new_game(request: NewGameRequest):
     """Start a new game with specified parameters."""
-    board = generate_board(request.rows, request.cols, request.colors)
+    board = generate_board(request.rows, request.cols, request.colors, request.destructor_chance)
     return GameState(board=board, score=0, moves=0)
 
 @app.post("/api/click")
