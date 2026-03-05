@@ -64,24 +64,6 @@ h1 {
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-.board.falling .cell {
-  animation: fall 0.3s ease-out;
-}
-
-@keyframes fall {
-  0% {
-    transform: translateY(-50px);
-    opacity: 0.5;
-  }
-  50% {
-    transform: translateY(5px);
-  }
-  100% {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
 .cell {
   width: 50px;
   height: 50px;
@@ -127,6 +109,46 @@ h1 {
 .cell.empty {
   cursor: default;
   border: 2px dashed rgba(255, 255, 255, 0.05);
+}
+
+/* Overlay screens */
+.overlay {
+  text-align: center;
+  padding: 40px;
+  border-radius: 16px;
+  margin-bottom: 30px;
+  animation: popIn 0.4s ease-out;
+}
+
+@keyframes popIn {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.overlay.victory {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  box-shadow: 0 10px 40px rgba(34, 197, 94, 0.4);
+}
+
+.overlay.gameover {
+  background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+  box-shadow: 0 10px 40px rgba(220, 38, 38, 0.4);
+}
+
+.overlay h2 {
+  font-size: 2.5rem;
+  margin-bottom: 16px;
+}
+
+.overlay p {
+  font-size: 1.3rem;
+  margin-bottom: 8px;
 }
 
 .new-game-btn {

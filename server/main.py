@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Set
+from typing import List, Set, Optional
 import random
 
 app = FastAPI()
@@ -27,6 +27,7 @@ class GameState(BaseModel):
     board: List[List[Block]]
     score: int
     moves: int
+    status: str = "playing"  # "playing", "won", "lost"
 
 class NewGameRequest(BaseModel):
     rows: int = 8
@@ -54,6 +55,33 @@ def generate_board(rows: int, cols: int, colors: List[str], destructor_chance: f
         board.append(row_blocks)
     return board
 
+def check_game_status(board: List[List[Block]]) -> str:
+    """Check if player won or lost."""
+    # Count blocks
+    total_blocks = 0
+    destructors = 0
+    gamepieces = 0
+    
+    for row in board:
+        for block in row:
+            if block is not None:
+                total_blocks += 1
+                if block.block_type == "destructor":
+                    destructors += 1
+                else:
+                    gamepieces += 1
+    
+    # Win: no blocks remaining
+    if total_blocks == 0:
+        return "won"
+    
+    # Lose: no destructors but game pieces remain
+    if destructors == 0 and gamepieces > 0:
+        return "lost"
+    
+    # Still playing
+    return "playing"
+
 @app.get("/")
 async def root():
     return {"message": "Boxout API", "version": "1.0.0"}
@@ -62,7 +90,7 @@ async def root():
 async def new_game(request: NewGameRequest):
     """Start a new game with specified parameters."""
     board = generate_board(request.rows, request.cols, request.colors, request.destructor_chance)
-    return GameState(board=board, score=0, moves=0)
+    return GameState(board=board, score=0, moves=0, status="playing")
 
 @app.post("/api/click")
 async def click_block(block_id: int, current_state: GameState):
@@ -107,15 +135,19 @@ async def click_block(block_id: int, current_state: GameState):
     # Remove blocks, apply gravity, fill with new blocks
     new_board = remove_blocks(current_state.board, to_destroy)
     new_board = apply_gravity(new_board)
-    new_board = fill_from_top(new_board, current_state.board[0][0].color if current_state.board and current_state.board[0] else "red")
+    new_board = fill_from_top(new_board)
     
     # Score: exponential bonus
     points = len(to_destroy) * len(to_destroy) * 10
     
+    # Check win/lose status
+    status = check_game_status(new_board)
+    
     return GameState(
         board=new_board,
         score=current_state.score + points,
-        moves=current_state.moves + 1
+        moves=current_state.moves + 1,
+        status=status
     )
 
 def remove_blocks(board: List[List[Block]], block_ids: Set[int]) -> List[List[Block]]:
@@ -147,7 +179,7 @@ def apply_gravity(board: List[List[Block]]) -> List[List[Block]]:
     
     return new_board
 
-def fill_from_top(board: List[List[Block]], default_color: str) -> List[List[Block]]:
+def fill_from_top(board: List[List[Block]]) -> List[List[Block]]:
     """Fill empty spaces at top with new random blocks."""
     if not board:
         return board
@@ -156,7 +188,7 @@ def fill_from_top(board: List[List[Block]], default_color: str) -> List[List[Blo
     rows = len(board)
     colors = ["red", "blue", "green", "yellow", "purple"]
     
-    # Find max block_id to continue from
+    # Find max block_id
     max_id = 0
     for row in board:
         for block in row:
@@ -169,7 +201,7 @@ def fill_from_top(board: List[List[Block]], default_color: str) -> List[List[Blo
         new_row = []
         for col_idx, block in enumerate(row):
             if block is None:
-                # Generate new block at top
+                # Generate new block
                 color = random.choice(colors)
                 block_type = "destructor" if random.random() < 0.2 else "gamepiece"
                 new_row.append(Block(
@@ -181,7 +213,6 @@ def fill_from_top(board: List[List[Block]], default_color: str) -> List[List[Blo
                 ))
                 next_id += 1
             else:
-                # Update row/col to match new position
                 block.row = row_idx
                 block.col = col_idx
                 new_row.append(block)
