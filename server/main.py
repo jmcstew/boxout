@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Set
+from typing import List, Set, Optional
 import random
 
 app = FastAPI()
@@ -24,31 +24,26 @@ class Block(BaseModel):
     block_type: str = "gamepiece"
 
 class GameState(BaseModel):
-    board: List[List[Block]]
+    board: List[List[Optional[Block]]]
     score: int
     moves: int
     status: str = "playing"
 
 class NewGameRequest(BaseModel):
     level: int = 1
+    seed: Optional[int] = None
 
 def get_difficulty_for_level(level: int) -> dict:
-    """Calculate difficulty parameters based on level."""
-    # Grid size increases every 5 levels
     if level <= 5:
         rows, cols = 8, 8
     elif level <= 10:
         rows, cols = 9, 9
-    elif level <= 15:
-        rows, cols = 10, 10
     else:
         rows, cols = 10, 10
     
-    # Destructor chance decreases slightly with level (harder)
     base_chance = 0.20
     destructor_chance = max(0.12, base_chance - (level - 1) * 0.005)
     
-    # Number of colors: start with 3, add more at higher levels
     if level <= 3:
         colors = ["red", "blue", "green"]
     elif level <= 7:
@@ -56,38 +51,60 @@ def get_difficulty_for_level(level: int) -> dict:
     else:
         colors = ["red", "blue", "green", "yellow", "purple"]
     
-    return {
-        "rows": rows,
-        "cols": cols,
-        "destructor_chance": destructor_chance,
-        "colors": colors
-    }
+    return {"rows": rows, "cols": cols, "destructor_chance": destructor_chance, "colors": colors}
 
-def generate_board(level: int) -> List[List[Block]]:
-    """Generate a new game board with difficulty based on level."""
+def generate_winnable_board(level: int, seed: Optional[int] = None) -> List[List[Block]]:
+    """Generate a guaranteed winnable board using reverse placement."""
+    if seed:
+        random.seed(seed)
+    
     diff = get_difficulty_for_level(level)
     rows, cols = diff["rows"], diff["cols"]
     colors = diff["colors"]
-    destructor_chance = diff["destructor_chance"]
     
-    board = []
+    # Start with empty board
+    board = [[None for _ in range(cols)] for _ in range(rows)]
     block_id = 0
-    for row in range(rows):
-        row_blocks = []
-        for col in range(cols):
-            color = random.choice(colors)
-            block_type = "destructor" if random.random() < destructor_chance else "gamepiece"
-            row_blocks.append(Block(
-                id=block_id,
-                color=color,
-                row=row,
-                col=col,
-                block_type=block_type
-            ))
-            block_id += 1
+    
+    # Place solvable destructors using "explosion" pattern
+    num_destructors = max(3, int(rows * cols * diff["destructor_chance"] * 0.5))
+    
+    for _ in range(num_destructors):
+        # Pick a random empty position or near existing blocks
+        attempts = 0
+        placed = False
+        
+        while attempts < 20 and not placed:
+            # Try to place near existing blocks for connectivity
+            existing = [(r, c) for r in range(rows) for c in range(cols) if board[r][c] is not None]
+            
+            if existing and random.random() < 0.7:
+                # Place near existing block
+                base_r, base_c = random.choice(existing)
+                dr, dc = random.choice([(-1,0), (1,0), (0,-1), (0,1)])
+                r, c = base_r + dr, base_c + dc
+            else:
+                # Place randomly
+                r, c = random.randint(0, rows-1), random.randint(0, cols-1)
+            
+            if 0 <= r < rows and 0 <= c < cols and board[r][c] is None:
+                color = random.choice(colors)
+                board[r][c] = Block(id=block_id, color=color, row=r, col=c, block_type="destructor")
+                block_id += 1
+                placed = True
+            attempts += 1
+    
+    # Fill remaining with game pieces
+    for r in range(rows):
+        for c in range(cols):
+            if board[r][c] is None:
+                color = random.choice(colors)
+                board[r][c] = Block(id=block_id, color=color, row=r, col=c, block_type="gamepiece")
+                block_id += 1
+    
     return board
 
-def check_game_status(board: List[List[Block]]) -> str:
+def check_game_status(board: List[List[Optional[Block]]]) -> str:
     total = destructors = gamepieces = 0
     for row in board:
         for block in row:
@@ -110,8 +127,7 @@ async def root():
 @app.post("/api/new-game")
 async def new_game(request: NewGameRequest):
     level = request.level or 1
-    diff = get_difficulty_for_level(level)
-    board = generate_board(level)
+    board = generate_winnable_board(level, request.seed)
     return GameState(board=board, score=0, moves=0, status="playing")
 
 @app.post("/api/click")
@@ -152,7 +168,7 @@ async def click_block(block_id: int, current_state: GameState):
     
     new_board = remove_blocks(current_state.board, to_destroy)
     new_board = apply_gravity(new_board)
-    new_board = fill_from_top(new_board)
+    new_board = fill_from_top(new_board, level=1)
     
     status = check_game_status(new_board)
     
@@ -163,14 +179,14 @@ async def click_block(block_id: int, current_state: GameState):
         status=status
     )
 
-def remove_blocks(board: List[List[Block]], block_ids: Set[int]) -> List[List[Block]]:
+def remove_blocks(board: List[List[Optional[Block]]], block_ids: Set[int]) -> List[List[Optional[Block]]]:
     new_board = []
     for row in board:
         new_row = [b if b is None or b.id not in block_ids else None for b in row]
         new_board.append(new_row)
     return new_board
 
-def apply_gravity(board: List[List[Block]]) -> List[List[Block]]:
+def apply_gravity(board: List[List[Optional[Block]]]) -> List[List[Optional[Block]]]:
     if not board:
         return board
     cols = len(board[0])
@@ -183,7 +199,7 @@ def apply_gravity(board: List[List[Block]]) -> List[List[Block]]:
             new_board[rows - len(new_row) + i][col] = block
     return new_board
 
-def fill_from_top(board: List[List[Block]]) -> List[List[Block]]:
+def fill_from_top(board: List[List[Optional[Block]]], level: int) -> List[List[Optional[Block]]]:
     if not board:
         return board
     cols = len(board[0])
