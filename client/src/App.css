@@ -351,10 +351,6 @@ h1 {
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
 }
 
-.board.destroying {
-  animation: boardShake 0.3s ease-out;
-}
-
 .board.falling {
   animation: boardBounce 0.35s ease-out;
 }

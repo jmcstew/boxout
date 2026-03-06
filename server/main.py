@@ -58,6 +58,13 @@ class SubmitScoreRequest(BaseModel):
     level: int
     score: int
 
+class ClickResponse(BaseModel):
+    board: List[List[Optional[Block]]]
+    score: int
+    moves: int
+    status: str
+    destroyed_ids: List[int]
+
 def get_difficulty_for_level(level: int) -> dict:
     if level <= 10: rows, cols = 8, 8
     elif level <= 25: rows, cols = 9, 9
@@ -239,8 +246,6 @@ async def click_block(request: ClickRequest):
             if adj_block and adj_block.color == target_color and adj_block.block_type != "destructor":
                 to_destroy.add(adj_block.id)
     
-
-    
     # Process destruction
     new_board = [[b if b is None or b.id not in to_destroy else None for b in row] for row in current_state.board]
     new_board = apply_gravity_sim(new_board)
@@ -252,11 +257,12 @@ async def click_block(request: ClickRequest):
     # Check game status
     status = check_game_status(new_board)
     
-    return GameState(
+    return ClickResponse(
         board=new_board,
         score=current_state.score + total_points,
         moves=current_state.moves + 1,
-        status=status
+        status=status,
+        destroyed_ids=list(to_destroy)
     )
 
 def apply_gravity(board: List[List[Optional[Block]]]) -> List[List[Optional[Block]]]:

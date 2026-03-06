@@ -91,6 +91,7 @@ function App() {
   const [challengeTarget, setChallengeTarget] = useState(null)
   const [showHelp, setShowHelp] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [destroyingIds, setDestroyingIds] = useState(new Set())
 
   useEffect(() => {
     setProfiles(loadFromStorage(STORAGE_KEYS.PROFILES, []))
@@ -221,11 +222,13 @@ function App() {
       }
 
       setLastPoints(data.score - score)
+      setDestroyingIds(new Set(data.destroyed_ids))
       setAnimationState('destroying')
 
       setTimeout(() => {
         playSound('destroy', preferences.sound)
         setBoard(data.board); setScore(data.score); setMoves(data.moves)
+        setDestroyingIds(new Set())
         if (data.status === 'won') handleLevelComplete()
         setStatus(data.status); setMessage('')
         setAnimationState('falling')
@@ -408,7 +411,7 @@ function App() {
               const isHovered = hoveredBlock === block?.id
               return (
                 <div key={block?.id || `empty-${idx}`}
-                  className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${isValid ? 'valid-move' : ''} ${isHovered && isValid ? 'hovered' : ''}`}
+                  className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${isValid ? 'valid-move' : ''} ${isHovered && isValid ? 'hovered' : ''} ${destroyingIds.has(block?.id) ? 'destroying' : ''}`}
                   style={{ backgroundColor: getBlockColor(block) }}
                   onClick={() => handleClick(block)}
                   onMouseEnter={() => setHoveredBlock(block?.id)}
