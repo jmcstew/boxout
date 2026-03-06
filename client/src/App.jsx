@@ -17,7 +17,7 @@ const DARKER_COLORS = {
   purple: '#6A1B9A'
 }
 
-const TOTAL_LEVELS = 15
+const TOTAL_LEVELS = 50
 
 function App() {
   const [screen, setScreen] = useState('map')

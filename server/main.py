@@ -34,19 +34,28 @@ class NewGameRequest(BaseModel):
     seed: Optional[int] = None
 
 def get_difficulty_for_level(level: int) -> dict:
-    if level <= 5:
+    """Get difficulty parameters for 50 levels."""
+    # Grid size progression
+    if level <= 10:
         rows, cols = 8, 8
-    elif level <= 10:
+    elif level <= 25:
         rows, cols = 9, 9
     else:
         rows, cols = 10, 10
     
-    base_chance = 0.20
-    destructor_chance = max(0.12, base_chance - (level - 1) * 0.005)
+    # Destructor chance - decreases with level (harder)
+    if level <= 10:
+        destructor_chance = 0.22 - (level - 1) * 0.01  # 22% -> 12%
+    elif level <= 25:
+        destructor_chance = 0.18 - (level - 11) * 0.005  # 18% -> 11%
+    else:
+        destructor_chance = 0.12 - (level - 26) * 0.002  # 12% -> 8%
+    destructor_chance = max(0.08, destructor_chance)
     
-    if level <= 3:
+    # Colors progression
+    if level <= 5:
         colors = ["red", "blue", "green"]
-    elif level <= 7:
+    elif level <= 15:
         colors = ["red", "blue", "green", "yellow"]
     else:
         colors = ["red", "blue", "green", "yellow", "purple"]
@@ -64,7 +73,8 @@ def generate_winnable_board(level: int, seed: Optional[int] = None) -> List[List
     board = [[None for _ in range(cols)] for _ in range(rows)]
     block_id = 0
     
-    num_destructors = max(3, int(rows * cols * diff["destructor_chance"] * 0.5))
+    # More destructors for lower levels, fewer for higher
+    num_destructors = max(3, int(rows * cols * diff["destructor_chance"] * 0.6))
     
     for _ in range(num_destructors):
         attempts = 0
@@ -73,7 +83,7 @@ def generate_winnable_board(level: int, seed: Optional[int] = None) -> List[List
         while attempts < 20 and not placed:
             existing = [(r, c) for r in range(rows) for c in range(cols) if board[r][c] is not None]
             
-            if existing and random.random() < 0.7:
+            if existing and random.random() < 0.75:
                 base_r, base_c = random.choice(existing)
                 dr, dc = random.choice([(-1,0), (1,0), (0,-1), (0,1)])
                 r, c = base_r + dr, base_c + dc
