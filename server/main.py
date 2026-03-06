@@ -34,8 +34,6 @@ class NewGameRequest(BaseModel):
     seed: Optional[int] = None
 
 def get_difficulty_for_level(level: int) -> dict:
-    """Get difficulty parameters for 50 levels."""
-    # Grid size progression
     if level <= 10:
         rows, cols = 8, 8
     elif level <= 25:
@@ -43,16 +41,14 @@ def get_difficulty_for_level(level: int) -> dict:
     else:
         rows, cols = 10, 10
     
-    # Destructor chance - decreases with level (harder)
     if level <= 10:
-        destructor_chance = 0.22 - (level - 1) * 0.01  # 22% -> 12%
+        destructor_chance = 0.22 - (level - 1) * 0.01
     elif level <= 25:
-        destructor_chance = 0.18 - (level - 11) * 0.005  # 18% -> 11%
+        destructor_chance = 0.18 - (level - 11) * 0.005
     else:
-        destructor_chance = 0.12 - (level - 26) * 0.002  # 12% -> 8%
+        destructor_chance = 0.12 - (level - 26) * 0.002
     destructor_chance = max(0.08, destructor_chance)
     
-    # Colors progression
     if level <= 5:
         colors = ["red", "blue", "green"]
     elif level <= 15:
@@ -73,7 +69,6 @@ def generate_winnable_board(level: int, seed: Optional[int] = None) -> List[List
     board = [[None for _ in range(cols)] for _ in range(rows)]
     block_id = 0
     
-    # More destructors for lower levels, fewer for higher
     num_destructors = max(3, int(rows * cols * diff["destructor_chance"] * 0.6))
     
     for _ in range(num_destructors):
@@ -177,7 +172,7 @@ def simulate_click(board: List[List[Optional[Block]]], block_id: int) -> List[Li
     to_destroy.add(clicked.id)
     
     if len(to_destroy) < 2:
-        return board
+        return board  # No valid move - return unchanged
     
     new_board = []
     for row in board:
@@ -259,10 +254,14 @@ def check_game_status(board: List[List[Optional[Block]]]) -> str:
                     destructors += 1
                 else:
                     gamepieces += 1
+    
+    # Win: no blocks remaining
     if total == 0:
         return "won"
+    # Lose: no destructors but game pieces remain
     if destructors == 0 and gamepieces > 0:
         return "lost"
+    # Still playing
     return "playing"
 
 @app.get("/")
@@ -280,6 +279,10 @@ async def click_block(block_id: int, current_state: GameState):
     rows = len(current_state.board)
     cols = len(current_state.board[0]) if rows > 0 else 0
     
+    if rows == 0 or cols == 0:
+        return {"error": "Invalid board"}
+    
+    # Find block
     clicked = None
     for row in current_state.board:
         for block in row:
@@ -291,9 +294,11 @@ async def click_block(block_id: int, current_state: GameState):
     
     if not clicked:
         return {"error": "Block not found"}
+    
     if clicked.block_type != "destructor":
         return {"error": "Only destructors can be clicked"}
     
+    # Check if this is a valid move (has adjacent same-color)
     target_color = clicked.color
     to_destroy: Set[int] = {clicked.id}
     
@@ -305,9 +310,11 @@ async def click_block(block_id: int, current_state: GameState):
             if adj_block and adj_block.color == target_color:
                 to_destroy.add(adj_block.id)
     
+    # Must have at least 2 blocks to destroy (destructor + adjacent)
     if len(to_destroy) < 2:
         return {"error": "Need at least 1 adjacent same-color block"}
     
+    # Valid move - process destruction
     points_per_block = COLOR_POINTS.get(target_color, 10)
     total_points = len(to_destroy) * points_per_block
     
