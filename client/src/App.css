@@ -253,3 +253,64 @@ h1 { font-size: 3rem; background: linear-gradient(135deg, #E53935, #1E88E5, #8E2
   color: #a855f7 !important;
   font-weight: 600;
 }
+
+.leaderboard-screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 20px;
+}
+
+.leaderboard-screen h1 { font-size: 2.5rem; margin-bottom: 10px; }
+
+.leaderboard-list {
+  background: rgba(255,255,255,0.05);
+  border-radius: 16px;
+  padding: 20px;
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 30px;
+}
+
+.leaderboard-entry {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 12px 15px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: rgba(255,255,255,0.05);
+}
+
+.leaderboard-entry.highlight {
+  background: linear-gradient(135deg, rgba(142,36,170,0.3), rgba(30,136,229,0.3));
+  border: 2px solid #8E24AA;
+}
+
+.leaderboard-entry .rank {
+  font-weight: 700;
+  font-size: 1.1rem;
+  min-width: 35px;
+}
+
+.leaderboard-entry .avatar { font-size: 1.5rem; }
+.leaderboard-entry .name { flex: 1; font-weight: 600; }
+.leaderboard-entry .score { font-weight: 700; color: #FDD835; font-size: 1.1rem; }
+
+.no-scores { text-align: center; color: rgba(255,255,255,0.5); padding: 30px; }
+
+.map-buttons { display: flex; gap: 15px; margin-top: 30px; }
+
+.leaderboard-btn {
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #8E24AA, #1E88E5);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.leaderboard-btn:hover { transform: translateY(-2px); }

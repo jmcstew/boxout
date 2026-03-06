@@ -19,56 +19,11 @@ const playSound = (type, enabled) => {
     osc.connect(gain)
     gain.connect(ctx.destination)
     switch (type) {
-      case 'click':
-        osc.frequency.setValueAtTime(440, ctx.currentTime)
-        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1)
-        gain.gain.setValueAtTime(0.3, ctx.currentTime)
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1)
-        osc.start(ctx.currentTime)
-        osc.stop(ctx.currentTime + 0.1)
-        break
-      case 'destroy':
-        osc.type = 'square'
-        osc.frequency.setValueAtTime(200, ctx.currentTime)
-        osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.3)
-        gain.gain.setValueAtTime(0.2, ctx.currentTime)
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3)
-        osc.start(ctx.currentTime)
-        osc.stop(ctx.currentTime + 0.3)
-        break
-      case 'win':
-        [523, 659, 784, 1047].forEach((f, i) => {
-          const o = ctx.createOscillator(), g = ctx.createGain()
-          o.connect(g)
-          g.connect(ctx.destination)
-          o.frequency.setValueAtTime(f, ctx.currentTime + i * 0.15)
-          g.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.15)
-          g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.3)
-          o.start(ctx.currentTime + i * 0.15)
-          o.stop(ctx.currentTime + i * 0.15 + 0.3)
-        })
-        return
-      case 'lose':
-        osc.type = 'sine'
-        osc.frequency.setValueAtTime(300, ctx.currentTime)
-        osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.5)
-        gain.gain.setValueAtTime(0.3, ctx.currentTime)
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5)
-        osc.start(ctx.currentTime)
-        osc.stop(ctx.currentTime + 0.5)
-        return
-      case 'highscore':
-        [784, 988, 1175, 1319, 1568].forEach((f, i) => {
-          const o = ctx.createOscillator(), g = ctx.createGain()
-          o.connect(g)
-          g.connect(ctx.destination)
-          o.frequency.setValueAtTime(f, ctx.currentTime + i * 0.1)
-          g.gain.setValueAtTime(0.25, ctx.currentTime + i * 0.1)
-          g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.1 + 0.2)
-          o.start(ctx.currentTime + i * 0.1)
-          o.stop(ctx.currentTime + i * 0.1 + 0.2)
-        })
-        return
+      case 'click': osc.frequency.setValueAtTime(440, ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1); gain.gain.setValueAtTime(0.3, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1); osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.1); break
+      case 'destroy': osc.type = 'square'; osc.frequency.setValueAtTime(200, ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.3); gain.gain.setValueAtTime(0.2, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3); osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.3); break
+      case 'win': [523, 659, 784, 1047].forEach((f, i) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.frequency.setValueAtTime(f, ctx.currentTime + i * 0.15); g.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.15); g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.3); o.start(ctx.currentTime + i * 0.15); o.stop(ctx.currentTime + i * 0.15 + 0.3) }); return
+      case 'lose': osc.type = 'sine'; osc.frequency.setValueAtTime(300, ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.5); gain.gain.setValueAtTime(0.3, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5); osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5); return
+      case 'highscore': [784, 988, 1175, 1319, 1568].forEach((f, i) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.frequency.setValueAtTime(f, ctx.currentTime + i * 0.1); g.gain.setValueAtTime(0.25, ctx.currentTime + i * 0.1); g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.1 + 0.2); o.start(ctx.currentTime + i * 0.1); o.stop(ctx.currentTime + i * 0.1 + 0.2) }); return
     }
   } catch (e) {}
 }
@@ -96,11 +51,13 @@ const findValidMoves = (board) => {
 }
 
 function App() {
-  const [screen, setScreen] = useState('profiles')
+  const [screen, setScreen] = useState('profiles') // profiles, map, game, leaderboard
   const [profiles, setProfiles] = useState([])
   const [currentProfile, setCurrentProfile] = useState(null)
   const [preferences, setPreferences] = useState({ sound: true })
   const [levelScores, setLevelScores] = useState({})
+  const [leaderboard, setLeaderboard] = useState([])
+  const [playerRank, setPlayerRank] = useState(null)
   const [board, setBoard] = useState([])
   const [score, setScore] = useState(0)
   const [moves, setMoves] = useState(0)
@@ -122,27 +79,41 @@ function App() {
     setProfiles(loadFromStorage(STORAGE_KEYS.PROFILES, []))
     setPreferences(loadFromStorage(STORAGE_KEYS.PREFERENCES, { sound: true }))
     setLevelScores(loadFromStorage(STORAGE_KEYS.LEVEL_SCORES, {}))
+    fetchLeaderboard()
   }, [])
 
   useEffect(() => { saveToStorage(STORAGE_KEYS.PREFERENCES, preferences) }, [preferences])
   useEffect(() => { saveToStorage(STORAGE_KEYS.LEVEL_SCORES, levelScores) }, [levelScores])
 
-  const saveProfiles = (newProfiles) => { saveToStorage(STORAGE_KEYS.PROFILES, newProfiles); setProfiles(newProfiles) }
+  const fetchLeaderboard = async () => {
+    try {
+      const res = await fetch('/api/leaderboard?limit=20')
+      const data = await res.json()
+      setLeaderboard(data)
+    } catch {}
+  }
 
+  const submitToLeaderboard = async () => {
+    if (!currentProfile || !currentProfile.stats.highScore) return
+    try {
+      await fetch('/api/leaderboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: currentProfile.username, avatar: currentProfile.avatar, level: TOTAL_LEVELS, score: currentProfile.stats.highScore })
+      })
+      fetchLeaderboard()
+    } catch {}
+  }
+
+  const saveProfiles = (newProfiles) => { saveToStorage(STORAGE_KEYS.PROFILES, newProfiles); setProfiles(newProfiles) }
   const createProfile = () => {
     if (!newUsername.trim()) return
-    const newProfile = {
-      id: Date.now(), username: newUsername.trim(), avatar: selectedAvatar,
-      stats: { played: 0, won: 0, lost: 0, highScore: 0 },
-      progress: { maxUnlocked: 1, completed: {} }
-    }
+    const newProfile = { id: Date.now(), username: newUsername.trim(), avatar: selectedAvatar, stats: { played: 0, won: 0, lost: 0, highScore: 0 }, progress: { maxUnlocked: 1, completed: {} } }
     saveProfiles([...profiles, newProfile])
     setNewUsername('')
   }
-
   const selectProfile = (profile) => { setCurrentProfile(profile); setMaxUnlocked(profile.progress.maxUnlocked); setCompletedLevels(profile.progress.completed); setScreen('map') }
   const deleteProfile = (id) => { saveProfiles(profiles.filter(p => p.id !== id)); if (currentProfile?.id === id) { setCurrentProfile(null); setScreen('profiles') } }
-
   const updateProfileStats = (newStats) => {
     if (!currentProfile) return
     const updated = { ...currentProfile, stats: newStats, progress: { maxUnlocked, completed: completedLevels } }
@@ -155,18 +126,11 @@ function App() {
     const prevHighScore = levelScores[level] || 0
     if (status === 'won') {
       const isNewHS = score > prevHighScore
-      if (isNewHS) {
-        playSound('highscore', preferences.sound)
-        setIsNewHighScore(true)
-        setLevelScores(prev => ({ ...prev, [level]: score }))
-      }
+      if (isNewHS) { playSound('highscore', preferences.sound); setIsNewHighScore(true); setLevelScores(prev => ({ ...prev, [level]: score })) }
       const newStats = { ...currentProfile.stats, played: currentProfile.stats.played + 1, won: currentProfile.stats.won + 1, highScore: Math.max(currentProfile.stats.highScore, score) }
       updateProfileStats(newStats)
     }
-    if (status === 'lost') {
-      const newStats = { ...currentProfile.stats, played: currentProfile.stats.played + 1, lost: currentProfile.stats.lost + 1 }
-      updateProfileStats(newStats)
-    }
+    if (status === 'lost') { const newStats = { ...currentProfile.stats, played: currentProfile.stats.played + 1, lost: currentProfile.stats.lost + 1 }; updateProfileStats(newStats) }
   }, [status])
 
   useEffect(() => { if (status === 'won') playSound('win', preferences.sound); if (status === 'lost') playSound('lose', preferences.sound) }, [status])
@@ -225,10 +189,7 @@ function App() {
         {profiles.map(p => (
           <div key={p.id} className="profile-card" onClick={() => selectProfile(p)}>
             <span className="profile-avatar">{p.avatar}</span>
-            <div className="profile-info">
-              <span className="profile-name">{p.username}</span>
-              <span className="profile-stats">High Score: {p.stats.highScore}</span>
-            </div>
+            <div className="profile-info"><span className="profile-name">{p.username}</span><span className="profile-stats">High Score: {p.stats.highScore}</span></div>
             <button className="delete-btn" onClick={e => { e.stopPropagation(); deleteProfile(p.id) }}>×</button>
           </div>
         ))}
@@ -260,7 +221,29 @@ function App() {
           </button>
         ))}
       </div>
-      <button className="back-btn" onClick={() => setScreen('profiles')}>Switch Profile</button>
+      <div className="map-buttons">
+        <button className="back-btn" onClick={() => setScreen('profiles')}>Switch Profile</button>
+        <button className="leaderboard-btn" onClick={() => { submitToLeaderboard(); setScreen('leaderboard') }}>🏆 Leaderboard</button>
+      </div>
+    </div>
+  )
+
+  const renderLeaderboard = () => (
+    <div className="leaderboard-screen">
+      <h1>🏆 Leaderboard</h1>
+      <p className="subtitle">Top Players</p>
+      <div className="leaderboard-list">
+        {leaderboard.map((entry, idx) => (
+          <div key={idx} className={`leaderboard-entry ${currentProfile?.username === entry.username ? 'highlight' : ''}`}>
+            <span className="rank">#{idx + 1}</span>
+            <span className="avatar">{entry.avatar}</span>
+            <span className="name">{entry.username}</span>
+            <span className="score">{entry.score}</span>
+          </div>
+        ))}
+        {leaderboard.length === 0 && <p className="no-scores">No scores yet! Be the first!</p>}
+      </div>
+      <button className="back-btn" onClick={() => setScreen('map')}>← Back to Map</button>
     </div>
   )
 
@@ -300,7 +283,6 @@ function App() {
             <div className="confetti">🎊</div>
             <h2>Level Complete!</h2>
             <p className="final-score">Score: {score}</p>
-            {personalBest > 0 && score < personalBest && <p className="personal-best">Best: {personalBest}</p>}
             {score >= personalBest && <p className="personal-best">Personal Best! ⭐</p>}
             <p>Moves: {moves}</p>
             {level < TOTAL_LEVELS ? <button onClick={nextLevel} className="new-game-btn next-level-btn">Next Level →</button> : <button onClick={backToMap} className="new-game-btn">All Levels Complete!</button>}
@@ -321,6 +303,7 @@ function App() {
 
   if (screen === 'profiles') return renderProfiles()
   if (screen === 'map') return renderMap()
+  if (screen === 'leaderboard') return renderLeaderboard()
   return renderGame()
 }
 
