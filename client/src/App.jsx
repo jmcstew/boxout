@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 
 const COLORS = {
@@ -19,13 +19,10 @@ const DARKER_COLORS = {
 
 const TOTAL_LEVELS = 50
 
-// Audio context for sound effects
 let audioCtx = null
 
 const getAudioContext = () => {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-  }
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)()
   return audioCtx
 }
 
@@ -36,7 +33,6 @@ const playSound = (type) => {
     
     const oscillator = ctx.createOscillator()
     const gainNode = ctx.createGain()
-    
     oscillator.connect(gainNode)
     gainNode.connect(ctx.destination)
     
@@ -49,7 +45,6 @@ const playSound = (type) => {
         oscillator.start(ctx.currentTime)
         oscillator.stop(ctx.currentTime + 0.1)
         break
-        
       case 'destroy':
         oscillator.type = 'square'
         oscillator.frequency.setValueAtTime(200, ctx.currentTime)
@@ -58,24 +53,9 @@ const playSound = (type) => {
         gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3)
         oscillator.start(ctx.currentTime)
         oscillator.stop(ctx.currentTime + 0.3)
-        
-        // Add noise burst
-        const noise = ctx.createOscillator()
-        const noiseGain = ctx.createGain()
-        noise.type = 'sawtooth'
-        noise.frequency.setValueAtTime(100, ctx.currentTime)
-        noiseGain.gain.setValueAtTime(0.1, ctx.currentTime)
-        noiseGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2)
-        noise.connect(noiseGain)
-        noiseGain.connect(ctx.destination)
-        noise.start(ctx.currentTime)
-        noise.stop(ctx.currentTime + 0.2)
         break
-        
       case 'win':
-        // Happy ascending arpeggio
-        const notes = [523, 659, 784, 1047]
-        notes.forEach((freq, i) => {
+        [523, 659, 784, 1047].forEach((freq, i) => {
           const osc = ctx.createOscillator()
           const gain = ctx.createGain()
           osc.connect(gain)
@@ -87,9 +67,7 @@ const playSound = (type) => {
           osc.stop(ctx.currentTime + i * 0.15 + 0.3)
         })
         return
-        
       case 'lose':
-        // Sad descending
         oscillator.type = 'sine'
         oscillator.frequency.setValueAtTime(300, ctx.currentTime)
         oscillator.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.5)
@@ -97,27 +75,38 @@ const playSound = (type) => {
         gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5)
         oscillator.start(ctx.currentTime)
         oscillator.stop(ctx.currentTime + 0.5)
-        
-        // Second descending tone
-        const osc2 = ctx.createOscillator()
-        const gain2 = ctx.createGain()
-        osc2.type = 'sine'
-        osc2.connect(gain2)
-        gain2.connect(ctx.destination)
-        osc2.frequency.setValueAtTime(250, ctx.currentTime + 0.2)
-        osc2.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.7)
-        gain2.gain.setValueAtTime(0.2, ctx.currentTime + 0.2)
-        gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.7)
-        osc2.start(ctx.currentTime + 0.2)
-        osc2.stop(ctx.currentTime + 0.7)
         return
-        
       default:
         break
     }
-  } catch (e) {
-    console.log('Audio not available')
+  } catch (e) {}
+}
+
+function findValidMoves(board) {
+  if (!board || board.length === 0) return new Set()
+  
+  const validMoves = new Set()
+  const rows = board.length
+  const cols = board[0].length
+  
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const block = board[r]?.[c]
+      if (block && block.block_type === 'destructor') {
+        // Check adjacent for same color
+        const directions = [[-1,0],[1,0],[0,-1],[0,1]]
+        for (const [dr, dc] of directions) {
+          const nr, nc = r + dr, c + dc
+          const adj = board[nr]?.[nc]
+          if (adj && adj.color === block.color) {
+            validMoves.add(block.id)
+            break
+          }
+        }
+      }
+    }
   }
+  return validMoves
 }
 
 function App() {
@@ -132,7 +121,9 @@ function App() {
   const [message, setMessage] = useState('')
   const [gridSize, setGridSize] = useState(8)
   const [animationState, setAnimationState] = useState('idle')
-  const prevBoardRef = useRef([])
+  const [validMoves, setValidMoves] = useState(new Set())
+  const [hoveredBlock, setHoveredBlock] = useState(null)
+  const [lastPoints, setLastPoints] = useState(0)
 
   useEffect(() => {
     const saved = localStorage.getItem('boxout_progress')
@@ -143,11 +134,14 @@ function App() {
     }
   }, [])
 
-  // Play sound on status change
   useEffect(() => {
     if (status === 'won') playSound('win')
     if (status === 'lost') playSound('lose')
   }, [status])
+
+  useEffect(() => {
+    setValidMoves(findValidMoves(board))
+  }, [board])
 
   const saveProgress = (unlocked, completed) => {
     localStorage.setItem('boxout_progress', JSON.stringify({ maxUnlocked: unlocked, completed }))
@@ -176,12 +170,12 @@ function App() {
       })
       const data = await response.json()
       setBoard(data.board)
-      prevBoardRef.current = data.board
       setScore(data.score)
       setMoves(data.moves)
       setStatus(data.status)
       setMessage('')
       setAnimationState('idle')
+      setLastPoints(0)
     } catch (err) {
       setMessage('Backend not running')
     }
@@ -200,6 +194,7 @@ function App() {
 
   const handleClick = async (block) => {
     if (!block || block.block_type !== 'destructor' || status !== 'playing' || animationState !== 'idle') return
+    if (!validMoves.has(block.id)) return
     
     playSound('click')
     
@@ -216,7 +211,10 @@ function App() {
         return
       }
       
-      prevBoardRef.current = board
+      // Calculate points for animation
+      const pointsEarned = data.score - score
+      setLastPoints(pointsEarned)
+      
       setAnimationState('destroying')
       
       setTimeout(() => {
@@ -231,6 +229,7 @@ function App() {
         
         setTimeout(() => {
           setAnimationState('idle')
+          setLastPoints(0)
         }, 350)
       }, 300)
       
@@ -274,16 +273,27 @@ function App() {
       <div className="score-display">
         <span className="score-label">Score</span>
         <span className="score-value">{score}</span>
+        {lastPoints > 0 && <span className="points-popup">+{lastPoints}</span>}
       </div>
       
       {message && <div className="message">{message}</div>}
       
       {status === 'playing' && (
         <div className={`board ${animationState}`} style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}>
-          {board.flat().map((block, idx) => (
-            <div key={block?.id || `empty-${idx}`} className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${animationState === 'destroying' ? 'destroying' : ''}`}
-              style={{ backgroundColor: getBlockColor(block) }} onClick={() => handleClick(block)} />
-          ))}
+          {board.flat().map((block, idx) => {
+            const isValid = block && validMoves.has(block.id)
+            const isHovered = hoveredBlock === block?.id
+            return (
+              <div 
+                key={block?.id || `empty-${idx}`} 
+                className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${isValid ? 'valid-move' : ''} ${isHovered && isValid ? 'hovered' : ''}`}
+                style={{ backgroundColor: getBlockColor(block) }} 
+                onClick={() => handleClick(block)}
+                onMouseEnter={() => setHoveredBlock(block?.id)}
+                onMouseLeave={() => setHoveredBlock(null)}
+              />
+            )
+          })}
         </div>
       )}
       
