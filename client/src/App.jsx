@@ -28,7 +28,7 @@ const playSound = (type, enabled) => {
   } catch (e) { }
 }
 
-const STORAGE_KEYS = { PROFILES: 'boxout_proFILES', PREFERENCES: 'boxout_preferences', LEVEL_SCORES: 'boxout_level_scores', FRIENDS: 'boxout_friends' }
+const STORAGE_KEYS = { PROFILES: 'boxout_proFILES', PREFERENCES: 'boxout_preferences', LEVEL_SCORES: 'boxout_level_scores' }
 const loadFromStorage = (key, fallback) => { try { const data = localStorage.getItem(key); return data ? JSON.parse(data) : fallback } catch { return fallback } }
 const saveToStorage = (key, data) => { try { localStorage.setItem(key, JSON.stringify(data)) } catch { } }
 
@@ -69,7 +69,6 @@ function App() {
   const [currentProfile, setCurrentProfile] = useState(null)
   const [preferences, setPreferences] = useState({ sound: true })
   const [levelScores, setLevelScores] = useState({})
-  const [friends, setFriends] = useState([])
   const [leaderboard, setLeaderboard] = useState([])
   const [board, setBoard] = useState([])
   const [score, setScore] = useState(0)
@@ -87,8 +86,6 @@ function App() {
   const [isNewHighScore, setIsNewHighScore] = useState(false)
   const [newUsername, setNewUsername] = useState('')
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0])
-  const [friendToAdd, setFriendToAdd] = useState('')
-  const [challengeTarget, setChallengeTarget] = useState(null)
   const [showHelp, setShowHelp] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [destroyingIds, setDestroyingIds] = useState(new Set())
@@ -97,13 +94,11 @@ function App() {
     setProfiles(loadFromStorage(STORAGE_KEYS.PROFILES, []))
     setPreferences(loadFromStorage(STORAGE_KEYS.PREFERENCES, { sound: true }))
     setLevelScores(loadFromStorage(STORAGE_KEYS.LEVEL_SCORES, {}))
-    setFriends(loadFromStorage(STORAGE_KEYS.FRIENDS, []))
     fetchLeaderboard()
   }, [])
 
   useEffect(() => { saveToStorage(STORAGE_KEYS.PREFERENCES, preferences) }, [preferences])
   useEffect(() => { saveToStorage(STORAGE_KEYS.LEVEL_SCORES, levelScores) }, [levelScores])
-  useEffect(() => { saveToStorage(STORAGE_KEYS.FRIENDS, friends) }, [friends])
 
   // Update valid moves whenever board changes
   useEffect(() => {
@@ -139,22 +134,11 @@ function App() {
   const selectProfile = (profile) => { setCurrentProfile(profile); setMaxUnlocked(profile.progress.maxUnlocked); setCompletedLevels(profile.progress.completed); setScreen('map') }
   const deleteProfile = (id) => { saveProfiles(profiles.filter(p => p.id !== id)); if (currentProfile?.id === id) { setCurrentProfile(null); setScreen('profiles') } }
 
-  const addFriend = () => {
-    if (!friendToAdd.trim() || friendToAdd.trim() === currentProfile?.username) return
-    if (friends.find(f => f.username === friendToAdd.trim())) return
-    setFriends([...friends, { username: friendToAdd.trim(), avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)], highScore: 0 }])
-    setFriendToAdd('')
-  }
-  const removeFriend = (username) => { setFriends(friends.filter(f => f.username !== username)) }
-  const challengeFriend = (friend) => { setChallengeTarget(friend); setScreen('map') }
-  const updateFriendScore = (username, score) => { setFriends(friends.map(f => f.username === username ? { ...f, highScore: score } : f)) }
-
   const updateProfileStats = (newStats) => {
     if (!currentProfile) return
     const updated = { ...currentProfile, stats: newStats, progress: { maxUnlocked, completed: completedLevels } }
     saveProfiles(profiles.map(p => p.id === updated.id ? updated : p))
     setCurrentProfile(updated)
-    friends.forEach(f => { if (f.username === currentProfile.username) updateFriendScore(f.username, newStats.highScore) })
   }
 
   useEffect(() => {
@@ -175,7 +159,7 @@ function App() {
 
   const startLevel = (lvl) => {
     if (lvl > maxUnlocked) return
-    setLevel(lvl); setGridSize(getGridSize(lvl)); newGame(lvl); setScreen('game'); setIsNewHighScore(false); setChallengeTarget(null)
+    setLevel(lvl); setGridSize(getGridSize(lvl)); newGame(lvl); setScreen('game'); setIsNewHighScore(false)
   }
 
   const newGame = async (lvl = level) => {
@@ -269,7 +253,6 @@ function App() {
         <span className="high-score">Best: {currentProfile?.stats.highScore}</span>
         <button className="sound-btn" onClick={toggleSound}>{preferences.sound ? '🔊' : '🔇'}</button>
       </div>
-      {challengeTarget && <div className="challenge-banner">🥊 Challenge: Beat {challengeTarget.username}'s score ({challengeTarget.highScore})!</div>}
       <h1>Boxout</h1><p className="map-subtitle">Select a Level</p>
       <div className="level-nodes">
         {Array.from({ length: TOTAL_LEVELS }, (_, i) => i + 1).map(lvl => (
@@ -283,31 +266,7 @@ function App() {
       <div className="map-buttons">
         <button className="back-btn" onClick={() => setScreen('profiles')}>Switch Profile</button>
         <button className="leaderboard-btn" onClick={() => { submitToLeaderboard(); setScreen('leaderboard') }}>🏆 Leaderboard</button>
-        <button className="friends-btn" onClick={() => setScreen('friends')}>👥 Friends</button>
       </div>
-    </div>
-  )
-
-  const renderFriends = () => (
-    <div className="friends-screen">
-      <h1>👥 Friends</h1><p className="subtitle">Challenge your friends!</p>
-      <div className="add-friend">
-        <input type="text" placeholder="Friend's username" value={friendToAdd} onChange={e => setFriendToAdd(e.target.value)} maxLength={12} />
-        <button className="new-game-btn" onClick={addFriend}>Add Friend</button>
-      </div>
-      <div className="friends-list">
-        {friends.map((friend, idx) => (
-          <div key={idx} className="friend-card">
-            <span className="friend-avatar">{friend.avatar}</span>
-            <div className="friend-info"><span className="friend-name">{friend.username}</span><span className="friend-score">Best: {friend.highScore || 'N/A'}</span></div>
-            {friend.highScore > 0 && currentProfile?.stats.highScore < friend.highScore && <button className="challenge-btn" onClick={() => challengeFriend(friend)}>🥊 Challenge</button>}
-            <button className="remove-friend" onClick={() => removeFriend(friend.username)}>×</button>
-          </div>
-        ))}
-        {friends.length === 0 && <p className="no-friends">No friends yet!</p>}
-      </div>
-      <div className="my-friend-code"><p>Your username: <strong>{currentProfile?.username}</strong></p><p className="hint">Share with friends!</p></div>
-      <button className="back-btn" onClick={() => setScreen('map')}>← Back to Map</button>
     </div>
   )
 
@@ -328,7 +287,6 @@ function App() {
 
   const renderGame = () => {
     const personalBest = levelScores[level] || 0
-    const challengeScore = challengeTarget?.highScore || 0
     return (
       <div className="game-container">
         <button className="back-btn" onClick={backToMap}>← Map</button>
@@ -397,7 +355,7 @@ function App() {
           </div>
         )}
         <div className="level-display">Level {level}</div>
-        <div className="level-info">{gridSize}×{gridSize} grid • Best: {personalBest}{challengeTarget && challengeScore > 0 && <span className="challenge-score"> • Beat {challengeTarget.username}: {challengeScore}</span>}</div>
+        <div className="level-info">{gridSize}×{gridSize} grid • Best: {personalBest}</div>
         <div className="score-display">
           <span className="score-label">Score</span>
           <span className="score-value">{score}</span>
@@ -424,7 +382,6 @@ function App() {
         {status === 'won' && (
           <div className="overlay victory">
             {isNewHighScore && <div className="new-highscore">🏆 NEW HIGH SCORE! 🏆</div>}
-            {challengeTarget && score > challengeScore && <div className="challenge-win">🎉 You beat {challengeTarget.username}!</div>}
             <div className="confetti">🎊</div>
             <h2>Level Complete!</h2>
             <p className="final-score">Score: {score}</p>
@@ -447,7 +404,6 @@ function App() {
   }
 
   if (screen === 'profiles') return renderProfiles()
-  if (screen === 'friends') return renderFriends()
   if (screen === 'leaderboard') return renderLeaderboard()
   if (screen === 'map') return renderMap()
   return renderGame()
