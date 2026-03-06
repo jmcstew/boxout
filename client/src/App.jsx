@@ -71,18 +71,17 @@ function App() {
   const [levelScores, setLevelScores] = useState(() => loadFromStorage(STORAGE_KEYS.LEVEL_SCORES, {}))
   const [leaderboard, setLeaderboard] = useState([])
   const [board, setBoard] = useState([])
-  const [score, setScore] = useState(0)
-  const [moves, setMoves] = useState(0)
   const [level, setLevel] = useState(1)
   const [maxUnlocked, setMaxUnlocked] = useState(1)
   const [completedLevels, setCompletedLevels] = useState({})
   const [status, setStatus] = useState('playing')
+  const [elapsedTime, setElapsedTime] = useState(0)
+  const [timerActive, setTimerActive] = useState(false)
   const [message, setMessage] = useState('')
   const [gridSize, setGridSize] = useState(8)
   const [animationState, setAnimationState] = useState('idle')
   const [validMoves, setValidMoves] = useState(new Set())
   const [hoveredBlock, setHoveredBlock] = useState(null)
-  const [lastPoints, setLastPoints] = useState(0)
   const [isNewHighScore, setIsNewHighScore] = useState(false)
   const [newUsername, setNewUsername] = useState('')
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0])
@@ -124,6 +123,26 @@ function App() {
     setValidMoves(moves)
   }, [board])
 
+  // Handle timer
+  useEffect(() => {
+    let interval = null
+    if (timerActive && status === 'playing') {
+      interval = setInterval(() => {
+        setElapsedTime(prev => prev + 1)
+      }, 1000)
+    } else {
+      clearInterval(interval)
+    }
+    return () => clearInterval(interval)
+  }, [timerActive, status])
+
+  const formatTime = (seconds) => {
+    if (seconds === Infinity || seconds === null || seconds === undefined || isNaN(seconds)) return '--:--'
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
   const fetchLeaderboard = async () => {
     try {
       const res = await fetch('/api/leaderboard?limit=20')
@@ -134,9 +153,9 @@ function App() {
 
   const submitToLeaderboard = async () => {
     if (!currentProfile) return
-    const cumulativeScore = Object.values(levelScores).reduce((sum, item) => sum + (typeof item === 'object' ? (item.username === currentProfile.username ? item.score : 0) : item), 0)
+    const totalTime = Object.values(levelScores).reduce((sum, item) => sum + (typeof item === 'object' ? (item.username === currentProfile.username ? (item.time || 0) : 0) : 0), 0)
     try {
-      await fetch('/api/leaderboard', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: currentProfile.username, avatar: currentProfile.avatar, level: TOTAL_LEVELS, score: cumulativeScore }) })
+      await fetch('/api/leaderboard', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: currentProfile.username, avatar: currentProfile.avatar, level: TOTAL_LEVELS, score: totalTime }) })
       fetchLeaderboard()
     } catch { }
   }
@@ -155,50 +174,44 @@ function App() {
 
   const updateProfileStats = (newStats, updatedLevelScores = levelScores) => {
     if (!currentProfile) return
-    // Calculate cumulative high score based on all levels using the passed or current data
-    const totalScore = Object.values(updatedLevelScores).reduce((sum, item) => {
-      if (typeof item === 'object') {
-        return sum + (item.username === currentProfile.username ? (item.score || 0) : 0)
+    const totalTime = Object.values(updatedLevelScores).reduce((sum, item) => {
+      if (typeof item === 'object' && item.username === currentProfile.username) {
+        return sum + (item.time || 0)
       }
-      return sum + (item || 0)
+      return sum
     }, 0)
 
-    const updated = { ...currentProfile, stats: { ...newStats, highScore: totalScore }, progress: { maxUnlocked, completed: completedLevels } }
+    const updated = { ...currentProfile, stats: { ...newStats, highScore: totalTime }, progress: { maxUnlocked, completed: completedLevels } }
     saveProfiles(profiles.map(p => p.id === updated.id ? updated : p))
     setCurrentProfile(updated)
   }
 
   useEffect(() => {
     if (!currentProfile) return
-    const prevStats = levelScores[level] || { score: 0, username: '', moves: Infinity, movesUsername: '' }
+    const prevStats = levelScores[level] || { time: Infinity, username: '' }
     if (status === 'won') {
-      const isNewHS = score > (prevStats.score || 0)
-      const isNewMovesRecord = moves < (prevStats.moves || Infinity)
+      const isNewRecord = elapsedTime < (prevStats.time || Infinity)
 
       let nextLevelScores = levelScores
-      if (isNewHS || isNewMovesRecord) {
-        if (isNewHS) playSound('highscore', preferences.sound)
-        setIsNewHighScore(isNewHS)
+      if (isNewRecord) {
+        playSound('highscore', preferences.sound)
+        setIsNewHighScore(true)
 
         const updatedEntry = {
-          score: isNewHS ? score : (prevStats.score || 0),
-          username: isNewHS ? currentProfile.username : (prevStats.username || ''),
-          moves: isNewMovesRecord ? moves : (prevStats.moves || Infinity),
-          movesUsername: isNewMovesRecord ? currentProfile.username : (prevStats.movesUsername || '')
+          time: elapsedTime,
+          username: currentProfile.username,
+          avatar: currentProfile.avatar,
         }
 
         nextLevelScores = { ...levelScores, [level]: updatedEntry }
         setLevelScores(nextLevelScores)
 
-        // Submit to SQLite DB
         submitLevelRecord({
           level,
           username: currentProfile.username,
           avatar: currentProfile.avatar,
-          score: score,
-          moves: moves,
-          is_new_score: isNewHS,
-          is_new_moves: isNewMovesRecord
+          time: elapsedTime,
+          is_new_record: true
         })
       }
 
@@ -208,10 +221,12 @@ function App() {
         won: currentProfile.stats.won + 1
       }
       updateProfileStats(newStats, nextLevelScores)
+      setTimerActive(false)
     }
     if (status === 'lost') {
       const newStats = { ...currentProfile.stats, played: currentProfile.stats.played + 1, lost: currentProfile.stats.lost + 1 }
       updateProfileStats(newStats, levelScores)
+      setTimerActive(false)
     }
   }, [status])
 
@@ -225,11 +240,12 @@ function App() {
   }
 
   const newGame = async (lvl = level) => {
-    fetchLevelRecords() // Refresh global records every time we start a level
+    fetchLevelRecords()
     try {
       const res = await fetch('/api/new-game', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ level: lvl }) })
       const data = await res.json()
-      setBoard(data.board); setScore(data.score); setMoves(data.moves); setStatus(data.status); setMessage(''); setAnimationState('idle'); setLastPoints(0); setIsNewHighScore(false)
+      setBoard(data.board); setStatus(data.status); setMessage(''); setAnimationState('idle'); setIsNewHighScore(false)
+      setElapsedTime(0); setTimerActive(false)
     } catch { setMessage('Backend not running') }
   }
 
@@ -257,10 +273,11 @@ function App() {
     }
     if (animationState !== 'idle') return
 
+    if (!timerActive) setTimerActive(true) // Start timer on first interaction
     playSound('click', preferences.sound)
 
     try {
-      const res = await fetch('/api/click', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ block_id: block.id, current_state: { board, score, moves } }) })
+      const res = await fetch('/api/click', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ block_id: block.id, current_state: { board, score: 0, moves: 0 } }) })
       const data = await res.json()
 
       if (data.error) {
@@ -268,18 +285,17 @@ function App() {
         return
       }
 
-      setLastPoints(data.score - score)
       setDestroyingIds(new Set(data.destroyed_ids))
       setAnimationState('destroying')
 
       setTimeout(() => {
         playSound('destroy', preferences.sound)
-        setBoard(data.board); setScore(data.score); setMoves(data.moves)
+        setBoard(data.board)
         setDestroyingIds(new Set())
         if (data.status === 'won') handleLevelComplete()
         setStatus(data.status); setMessage('')
         setAnimationState('falling')
-        setTimeout(() => { setAnimationState('idle'); setLastPoints(0) }, 350)
+        setTimeout(() => { setAnimationState('idle') }, 350)
       }, 300)
     } catch { setMessage('Error') }
   }
@@ -294,7 +310,7 @@ function App() {
         {profiles.map(p => (
           <div key={p.id} className="profile-card" onClick={() => selectProfile(p)}>
             <span className="profile-avatar">{p.avatar}</span>
-            <div className="profile-info"><span className="profile-name">{p.username}</span><span className="profile-stats">High Score: {p.stats.highScore}</span></div>
+            <div className="profile-info"><span className="profile-name">{p.username}</span><span className="profile-stats">Total Time: {formatTime(p.stats.highScore)}</span></div>
             <button className="delete-btn" onClick={e => { e.stopPropagation(); deleteProfile(p.id) }}>×</button>
           </div>
         ))}
@@ -313,7 +329,7 @@ function App() {
       <div className="profile-header">
         <span className="profile-avatar small">{currentProfile?.avatar}</span>
         <span>{currentProfile?.username}</span>
-        <span className="high-score">Best: {currentProfile?.stats.highScore}</span>
+        <span className="high-score">Total Time: {formatTime(currentProfile?.stats.highScore)}</span>
         <button className="sound-btn" onClick={toggleSound}>{preferences.sound ? '🔊' : '🔇'}</button>
       </div>
       <h1>Boxout</h1><p className="map-subtitle">Select a Level</p>
@@ -322,9 +338,9 @@ function App() {
           <button key={lvl} className={`level-node ${completedLevels[lvl] ? 'completed' : ''} ${level === lvl && screen === 'game' ? 'current' : ''} ${lvl > maxUnlocked ? 'locked' : ''}`}
             onClick={() => startLevel(lvl)} disabled={lvl > maxUnlocked}>
             {completedLevels[lvl] ? '✓' : lvl}
-            {levelScores[lvl] && (levelScores[lvl].score || levelScores[lvl]) > 0 && (
+            {levelScores[lvl] && levelScores[lvl].time > 0 && (
               <span className="level-score">
-                {typeof levelScores[lvl] === 'object' ? levelScores[lvl].score : levelScores[lvl]}
+                {formatTime(levelScores[lvl].time)}
               </span>
             )}
           </button>
@@ -343,7 +359,7 @@ function App() {
       <div className="leaderboard-list">
         {leaderboard.map((entry, idx) => (
           <div key={idx} className={`leaderboard-entry ${currentProfile?.username === entry.username ? 'highlight' : ''}`}>
-            <span className="rank">#{idx + 1}</span><span className="avatar">{entry.avatar}</span><span className="name">{entry.username}</span><span className="score">{entry.score}</span>
+            <span className="rank">#{idx + 1}</span><span className="avatar">{entry.avatar}</span><span className="name">{entry.username}</span><span className="score">{formatTime(entry.time)}</span>
           </div>
         ))}
         {leaderboard.length === 0 && <p className="no-scores">No scores yet!</p>}
@@ -353,14 +369,10 @@ function App() {
   )
 
   const renderGame = () => {
-    const levelStats = levelScores[level] || { score: 0, username: 'N/A', avatar: '', moves: Infinity, movesUsername: 'N/A', movesAvatar: '' }
-    const scoreRecord = typeof levelStats === 'object' ? (levelStats.score || 0) : levelStats
-    const personalBest = scoreRecord
-    const scoreHolder = typeof levelStats === 'object' ? (levelStats.username || 'N/A') : 'N/A'
-    const scoreAvatar = typeof levelStats === 'object' ? (levelStats.avatar || '') : ''
-    const moveRecord = typeof levelStats === 'object' ? (levelStats.moves || '--') : '--'
-    const moveHolder = typeof levelStats === 'object' ? (levelStats.movesUsername || 'N/A') : 'N/A'
-    const moveAvatar = typeof levelStats === 'object' ? (levelStats.movesAvatar || '') : ''
+    const levelStats = levelScores[level] || { time: Infinity, username: 'N/A', avatar: '' }
+    const recordTime = typeof levelStats === 'object' ? (levelStats.time || Infinity) : Infinity
+    const recordHolder = typeof levelStats === 'object' ? (levelStats.username || 'N/A') : 'N/A'
+    const recordAvatar = typeof levelStats === 'object' ? (levelStats.avatar || '') : ''
     return (
       <div className="game-container">
         <button className="back-btn" onClick={backToMap}>← Map</button>
@@ -406,15 +418,8 @@ function App() {
                   <p>After blocks are destroyed, remaining blocks fall down to fill the gaps. No new blocks appear from the top.</p>
                 </div>
                 <div className="help-section">
-                  <h3>⭐ Scoring</h3>
-                  <p>Each block destroyed earns points based on its color:</p>
-                  <ul className="help-colors">
-                    <li><span className="color-dot" style={{ background: '#E53935' }}></span> Red: 10 pts</li>
-                    <li><span className="color-dot" style={{ background: '#1E88E5' }}></span> Blue: 15 pts</li>
-                    <li><span className="color-dot" style={{ background: '#FDD835' }}></span> Yellow: 20 pts</li>
-                    <li><span className="color-dot" style={{ background: '#43A047' }}></span> Green: 25 pts</li>
-                    <li><span className="color-dot" style={{ background: '#8E24AA' }}></span> Purple: 30 pts</li>
-                  </ul>
+                  <h3>⏱️ Speed Run</h3>
+                  <p>Clear the board as fast as possible. Your total time across all 50 levels determines your rank on the global leaderboard!</p>
                 </div>
                 <div className="help-section">
                   <h3>💀 Game Over</h3>
@@ -430,13 +435,11 @@ function App() {
         )}
         <div className="level-display">Level {level}</div>
         <div className="level-info">
-          <div>Record: {scoreRecord} {scoreRecord > 0 && <span className="record-txt">by {scoreAvatar} {scoreHolder}</span>}</div>
-          <div>Efficiency: {moveRecord === Infinity ? '--' : moveRecord} moves {moveRecord !== Infinity && <span className="record-txt">by {moveAvatar} {moveHolder}</span>}</div>
+          <div>Fastest Clear: {formatTime(recordTime)} {recordTime !== Infinity && <span className="record-txt">by {recordAvatar} {recordHolder}</span>}</div>
         </div>
-        <div className="score-display">
-          <span className="score-label">Score</span>
-          <span className="score-value">{score}</span>
-          {lastPoints > 0 && <span className="points-popup">+{lastPoints}</span>}
+        <div className="timer-display">
+          <div className="timer-value">{formatTime(elapsedTime)}</div>
+          <div className="timer-label">Time</div>
         </div>
         {message && <div className="message">{message}</div>}
         {status === 'playing' && (
@@ -458,12 +461,11 @@ function App() {
         )}
         {status === 'won' && (
           <div className="overlay victory">
-            {isNewHighScore && <div className="new-highscore">🏆 NEW HIGH SCORE! 🏆</div>}
+            {isNewHighScore && <div className="new-highscore">⏱️ NEW RECORD TIME! ⏱️</div>}
             <div className="confetti">🎊</div>
             <h2>Level Complete!</h2>
-            <p className="final-score">Score: {score}</p>
-            {score >= personalBest && <p className="personal-best">Personal Best! ⭐</p>}
-            <p>Moves: {moves}</p>
+            <p className="final-score">Time: {formatTime(elapsedTime)}</p>
+            {elapsedTime <= recordTime && <p className="personal-best">Personal Best! ⭐</p>}
             {level < TOTAL_LEVELS ? <button onClick={nextLevel} className="new-game-btn next-level-btn">Next Level →</button> : <button onClick={backToMap} className="new-game-btn">All Levels Complete!</button>}
           </div>
         )}
@@ -471,8 +473,8 @@ function App() {
           <div className="overlay gameover">
             <h2>💀 Game Over</h2>
             <p>No destructors left!</p>
-            <p className="final-score">Score: {score}</p>
-            {personalBest > 0 && <p className="personal-best">Best: {personalBest}</p>}
+            <p className="final-score">Time: {formatTime(elapsedTime)}</p>
+            {recordTime !== Infinity && <p className="personal-best">Best: {formatTime(recordTime)}</p>}
             <button onClick={() => newGame()} className="new-game-btn">Try Again</button>
           </div>
         )}

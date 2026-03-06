@@ -17,7 +17,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_PATH = "/tmp/boxout_leaderboard.db"
+DB_PATH = "boxout_leaderboard.db"  # Use local file for backend persistence
+# Force reload to ensure DB schema is recreated after pivot
 COLOR_POINTS = {"red": 10, "blue": 15, "yellow": 20, "green": 25, "purple": 30}
 
 class Block(BaseModel):
@@ -29,8 +30,6 @@ class Block(BaseModel):
 
 class GameState(BaseModel):
     board: List[List[Optional[Block]]]
-    score: int
-    moves: int
     status: str = "playing"
 
 class NewGameRequest(BaseModel):
@@ -45,12 +44,10 @@ class SubmitScoreRequest(BaseModel):
     username: str
     avatar: str
     level: int
-    score: int
+    score: float  # Now represents total_time
 
 class ClickResponse(BaseModel):
     board: List[List[Optional[Block]]]
-    score: int
-    moves: int
     status: str
     destroyed_ids: List[int]
 
@@ -58,20 +55,25 @@ class LevelRecordSubmit(BaseModel):
     level: int
     username: str
     avatar: str
-    score: int
-    moves: int
-    is_new_score: bool
-    is_new_moves: bool
+    time: float  # Seconds
+    is_new_record: bool
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    # Check if we need to migrate or just reset
+    try:
+        c.execute("SELECT total_time FROM leaderboard LIMIT 1")
+    except sqlite3.OperationalError:
+        # If score column exists instead of total_time, drop and reset
+        c.execute("DROP TABLE IF EXISTS leaderboard")
+        c.execute("DROP TABLE IF EXISTS level_records")
+        
     c.execute('''CREATE TABLE IF NOT EXISTS leaderboard
-                 (id INTEGER PRIMARY KEY, username TEXT, avatar TEXT, level INTEGER, score INTEGER, timestamp TEXT)''')
+                 (id INTEGER PRIMARY KEY, username TEXT, avatar TEXT, level INTEGER, total_time REAL, timestamp TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS level_records
                  (level INTEGER PRIMARY KEY, 
-                  score_username TEXT, score_avatar TEXT, high_score INTEGER,
-                  moves_username TEXT, moves_avatar TEXT, min_moves INTEGER)''')
+                  username TEXT, avatar TEXT, min_time REAL)''')
     conn.commit()
     conn.close()
 
@@ -221,12 +223,10 @@ async def root(): return {"message": "Boxout API", "version": "1.0.0"}
 
 @app.post("/api/new-game")
 async def new_game(request: NewGameRequest):
-    # Use a deterministic seed calculation so each level is always the same for all players
-    # Using a prime multiplier helps spread the seeds out
     level = request.level or 1
     seed = (level * 101) + (level * 7)
     board = validate_and_generate(level, seed)
-    return GameState(board=board, score=0, moves=0, status="playing")
+    return GameState(board=board, status="playing")
 
 @app.post("/api/click")
 async def click_block(request: ClickRequest):
@@ -267,17 +267,11 @@ async def click_block(request: ClickRequest):
     new_board = [[b if b is None or b.id not in to_destroy else None for b in row] for row in current_state.board]
     new_board = apply_gravity_sim(new_board)
     
-    # Calculate score
-    points_per_block = COLOR_POINTS.get(target_color, 10)
-    total_points = len(to_destroy) * points_per_block
-    
     # Check game status
     status = check_game_status(new_board)
     
     return ClickResponse(
         board=new_board,
-        score=current_state.score + total_points,
-        moves=current_state.moves + 1,
         status=status,
         destroyed_ids=list(to_destroy)
     )
@@ -314,17 +308,19 @@ def fill_from_top(board: List[List[Optional[Block]]]) -> List[List[Optional[Bloc
 async def get_leaderboard(limit: int = 10):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT username, avatar, level, score FROM leaderboard ORDER BY score DESC LIMIT ?", (limit,))
+    c.execute("SELECT username, avatar, level, total_time FROM leaderboard ORDER BY total_time ASC LIMIT ?", (limit,))
     rows = c.fetchall()
     conn.close()
-    return [{"username": r[0], "avatar": r[1], "level": r[2], "score": r[3]} for r in rows]
+    return [{"username": r[0], "avatar": r[1], "level": r[2], "time": r[3]} for r in rows]
 
 @app.post("/api/leaderboard")
 async def submit_score(request: SubmitScoreRequest):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT INTO leaderboard (username, avatar, level, score, timestamp) VALUES (?, ?, ?, ?, ?)",
-               (request.username, request.avatar, request.level, request.score, datetime.now().isoformat()))
+    # Replace existing leaderboard entry for this user if they exist
+    c.execute("DELETE FROM leaderboard WHERE username = ?", (request.username,))
+    c.execute("INSERT INTO leaderboard (username, avatar, level, total_time, timestamp) VALUES (?, ?, ?, ?, ?)",
+               (request.username, request.avatar, request.level, float(request.score), datetime.now().isoformat()))
     conn.commit()
     conn.close()
     return {"success": True}
@@ -333,14 +329,13 @@ async def submit_score(request: SubmitScoreRequest):
 async def get_level_records():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT * FROM level_records")
+    c.execute("SELECT level, username, avatar, min_time FROM level_records")
     rows = c.fetchall()
     conn.close()
     result = {}
     for r in rows:
         result[r[0]] = {
-            "score": r[3], "username": r[1], "avatar": r[2],
-            "moves": r[6], "movesUsername": r[4], "movesAvatar": r[5]
+            "time": r[3], "username": r[1], "avatar": r[2]
         }
     return result
 
@@ -348,21 +343,9 @@ async def get_level_records():
 async def submit_level_record(request: LevelRecordSubmit):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT * FROM level_records WHERE level = ?", (request.level,))
-    exists = c.fetchone()
-    if not exists:
-        c.execute("""INSERT INTO level_records 
-                     (level, score_username, score_avatar, high_score, moves_username, moves_avatar, min_moves)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                  (request.level, request.username, request.avatar, request.score, 
-                   request.username, request.avatar, request.moves))
-    else:
-        if request.is_new_score:
-            c.execute("UPDATE level_records SET score_username = ?, score_avatar = ?, high_score = ? WHERE level = ?",
-                      (request.username, request.avatar, request.score, request.level))
-        if request.is_new_moves:
-            c.execute("UPDATE level_records SET moves_username = ?, moves_avatar = ?, min_moves = ? WHERE level = ?",
-                      (request.username, request.avatar, request.moves, request.level))
+    if request.is_new_record:
+        c.execute("INSERT OR REPLACE INTO level_records (level, username, avatar, min_time) VALUES (?, ?, ?, ?)",
+                  (request.level, request.username, request.avatar, request.time))
     conn.commit()
     conn.close()
     return {"success": True}
@@ -371,14 +354,14 @@ async def submit_level_record(request: LevelRecordSubmit):
 async def get_player_rank(username: str):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT MAX(score) FROM leaderboard WHERE username = ?", (username,))
+    c.execute("SELECT MIN(total_time) FROM leaderboard WHERE username = ?", (username,))
     best = c.fetchone()[0] or 0
-    c.execute("SELECT COUNT(*) FROM leaderboard WHERE score > ?", (best,))
+    c.execute("SELECT COUNT(*) FROM leaderboard WHERE total_time < ? AND total_time > 0", (best,))
     rank = (c.fetchone()[0] or 0) + 1
-    c.execute("SELECT username, avatar, level, score FROM leaderboard WHERE username = ? ORDER BY score DESC LIMIT 5", (username,))
-    scores = [{"level": r[2], "score": r[3]} for r in c.fetchall()]
+    c.execute("SELECT username, avatar, level, total_time FROM leaderboard WHERE username = ? ORDER BY total_time ASC LIMIT 5", (username,))
+    scores = [{"level": r[2], "time": r[3]} for r in c.fetchall()]
     conn.close()
-    return {"bestScore": best, "rank": rank, "scores": scores}
+    return {"bestTime": best, "rank": rank, "history": scores}
 
 if __name__ == "__main__":
     import uvicorn
