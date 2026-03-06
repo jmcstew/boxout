@@ -1,12 +1,8 @@
 import { useState, useEffect } from 'react'
 import './App.css'
 
-const COLORS = {
-  red: '#E53935', blue: '#1E88E5', yellow: '#FDD835', green: '#43A047', purple: '#8E24AA'
-}
-const DARKER_COLORS = {
-  red: '#B71C1C', blue: '#0D47A1', yellow: '#F9A825', green: '#2E7D32', purple: '#6A1B9A'
-}
+const COLORS = { red: '#E53935', blue: '#1E88E5', yellow: '#FDD835', green: '#43A047', purple: '#8E24AA' }
+const DARKER_COLORS = { red: '#B71C1C', blue: '#0D47A1', yellow: '#F9A825', green: '#2E7D32', purple: '#6A1B9A' }
 const TOTAL_LEVELS = 50
 const AVATARS = ['🦊', '🐼', '🦁', '🐯', '🐨', '🐙', '🦄', '🐲', '🦅', '🐙']
 
@@ -61,23 +57,25 @@ const playSound = (type, enabled) => {
         osc.start(ctx.currentTime)
         osc.stop(ctx.currentTime + 0.5)
         return
+      case 'highscore':
+        [784, 988, 1175, 1319, 1568].forEach((f, i) => {
+          const o = ctx.createOscillator(), g = ctx.createGain()
+          o.connect(g)
+          g.connect(ctx.destination)
+          o.frequency.setValueAtTime(f, ctx.currentTime + i * 0.1)
+          g.gain.setValueAtTime(0.25, ctx.currentTime + i * 0.1)
+          g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.1 + 0.2)
+          o.start(ctx.currentTime + i * 0.1)
+          o.stop(ctx.currentTime + i * 0.1 + 0.2)
+        })
+        return
     }
   } catch (e) {}
 }
 
-// Storage helpers
 const STORAGE_KEYS = { PROFILES: 'boxout_proFILES', PREFERENCES: 'boxout_preferences', LEVEL_SCORES: 'boxout_level_scores' }
-
-const loadFromStorage = (key, fallback) => {
-  try {
-    const data = localStorage.getItem(key)
-    return data ? JSON.parse(data) : fallback
-  } catch { return fallback }
-}
-
-const saveToStorage = (key, data) => {
-  try { localStorage.setItem(key, JSON.stringify(data)) } catch {}
-}
+const loadFromStorage = (key, fallback) => { try { const data = localStorage.getItem(key); return data ? JSON.parse(data) : fallback } catch { return fallback } }
+const saveToStorage = (key, data) => { try { localStorage.setItem(key, JSON.stringify(data)) } catch {} }
 
 const findValidMoves = (board) => {
   if (!board?.length) return new Set()
@@ -101,7 +99,7 @@ function App() {
   const [screen, setScreen] = useState('profiles')
   const [profiles, setProfiles] = useState([])
   const [currentProfile, setCurrentProfile] = useState(null)
-  const [preferences, setPreferences] = useState({ sound: true, music: true })
+  const [preferences, setPreferences] = useState({ sound: true })
   const [levelScores, setLevelScores] = useState({})
   const [board, setBoard] = useState([])
   const [score, setScore] = useState(0)
@@ -116,28 +114,20 @@ function App() {
   const [validMoves, setValidMoves] = useState(new Set())
   const [hoveredBlock, setHoveredBlock] = useState(null)
   const [lastPoints, setLastPoints] = useState(0)
+  const [isNewHighScore, setIsNewHighScore] = useState(false)
   const [newUsername, setNewUsername] = useState('')
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0])
 
-  // Load all saved data on mount
   useEffect(() => {
-    const savedProfiles = loadFromStorage(STORAGE_KEYS.PROFILES, [])
-    const savedPrefs = loadFromStorage(STORAGE_KEYS.PREFERENCES, { sound: true, music: true })
-    const savedScores = loadFromStorage(STORAGE_KEYS.LEVEL_SCORES, {})
-    setProfiles(savedProfiles)
-    setPreferences(savedPrefs)
-    setLevelScores(savedScores)
+    setProfiles(loadFromStorage(STORAGE_KEYS.PROFILES, []))
+    setPreferences(loadFromStorage(STORAGE_KEYS.PREFERENCES, { sound: true }))
+    setLevelScores(loadFromStorage(STORAGE_KEYS.LEVEL_SCORES, {}))
   }, [])
 
-  // Auto-save preferences
   useEffect(() => { saveToStorage(STORAGE_KEYS.PREFERENCES, preferences) }, [preferences])
   useEffect(() => { saveToStorage(STORAGE_KEYS.LEVEL_SCORES, levelScores) }, [levelScores])
 
-  // Save profiles
-  const saveProfiles = (newProfiles) => {
-    saveToStorage(STORAGE_KEYS.PROFILES, newProfiles)
-    setProfiles(newProfiles)
-  }
+  const saveProfiles = (newProfiles) => { saveToStorage(STORAGE_KEYS.PROFILES, newProfiles); setProfiles(newProfiles) }
 
   const createProfile = () => {
     if (!newUsername.trim()) return
@@ -150,17 +140,8 @@ function App() {
     setNewUsername('')
   }
 
-  const selectProfile = (profile) => {
-    setCurrentProfile(profile)
-    setMaxUnlocked(profile.progress.maxUnlocked)
-    setCompletedLevels(profile.progress.completed)
-    setScreen('map')
-  }
-
-  const deleteProfile = (id) => {
-    saveProfiles(profiles.filter(p => p.id !== id))
-    if (currentProfile?.id === id) { setCurrentProfile(null); setScreen('profiles') }
-  }
+  const selectProfile = (profile) => { setCurrentProfile(profile); setMaxUnlocked(profile.progress.maxUnlocked); setCompletedLevels(profile.progress.completed); setScreen('map') }
+  const deleteProfile = (id) => { saveProfiles(profiles.filter(p => p.id !== id)); if (currentProfile?.id === id) { setCurrentProfile(null); setScreen('profiles') } }
 
   const updateProfileStats = (newStats) => {
     if (!currentProfile) return
@@ -169,43 +150,36 @@ function App() {
     setCurrentProfile(updated)
   }
 
-  // Update high scores per level
   useEffect(() => {
-    if (status === 'won' && currentProfile) {
+    if (!currentProfile) return
+    const prevHighScore = levelScores[level] || 0
+    if (status === 'won') {
+      const isNewHS = score > prevHighScore
+      if (isNewHS) {
+        playSound('highscore', preferences.sound)
+        setIsNewHighScore(true)
+        setLevelScores(prev => ({ ...prev, [level]: score }))
+      }
       const newStats = { ...currentProfile.stats, played: currentProfile.stats.played + 1, won: currentProfile.stats.won + 1, highScore: Math.max(currentProfile.stats.highScore, score) }
       updateProfileStats(newStats)
-      // Save level high score
-      setLevelScores(prev => ({ ...prev, [level]: Math.max(prev[level] || 0, score) }))
     }
-    if (status === 'lost' && currentProfile) {
+    if (status === 'lost') {
       const newStats = { ...currentProfile.stats, played: currentProfile.stats.played + 1, lost: currentProfile.stats.lost + 1 }
       updateProfileStats(newStats)
     }
   }, [status])
 
-  useEffect(() => {
-    if (status === 'won') playSound('win', preferences.sound)
-    if (status === 'lost') playSound('lose', preferences.sound)
-  }, [status])
-
+  useEffect(() => { if (status === 'won') playSound('win', preferences.sound); if (status === 'lost') playSound('lose', preferences.sound) }, [status])
   useEffect(() => { setValidMoves(findValidMoves(board)) }, [board])
 
   const getGridSize = (lvl) => lvl <= 10 ? 8 : lvl <= 25 ? 9 : 10
-
-  const startLevel = (lvl) => {
-    if (lvl > maxUnlocked) return
-    setLevel(lvl); setGridSize(getGridSize(lvl)); newGame(lvl); setScreen('game')
-  }
+  const startLevel = (lvl) => { if (lvl > maxUnlocked) return; setLevel(lvl); setGridSize(getGridSize(lvl)); newGame(lvl); setScreen('game'); setIsNewHighScore(false) }
 
   const newGame = async (lvl = level) => {
     try {
-      const res = await fetch('/api/new-game', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ level: lvl })
-      })
+      const res = await fetch('/api/new-game', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ level: lvl }) })
       const data = await res.json()
-      setBoard(data.board); setScore(data.score); setMoves(data.moves); setStatus(data.status)
-      setMessage(''); setAnimationState('idle'); setLastPoints(0)
+      setBoard(data.board); setScore(data.score); setMoves(data.moves); setStatus(data.status); setMessage(''); setAnimationState('idle'); setLastPoints(0); setIsNewHighScore(false)
     } catch { setMessage('Backend not running') }
   }
 
@@ -217,24 +191,15 @@ function App() {
     setScreen('map')
   }
 
-  const nextLevel = () => {
-    if (level + 1 <= TOTAL_LEVELS) { setLevel(level + 1); setGridSize(getGridSize(level + 1)); newGame(level + 1) }
-  }
-
-  const handleLevelComplete = () => {
-    setCompletedLevels(prev => ({ ...prev, [level]: true }))
-    setMaxUnlocked(prev => Math.max(prev, level + 1))
-  }
+  const nextLevel = () => { if (level + 1 <= TOTAL_LEVELS) { setLevel(level + 1); setGridSize(getGridSize(level + 1)); newGame(level + 1) } }
+  const handleLevelComplete = () => { setCompletedLevels(prev => ({ ...prev, [level]: true })); setMaxUnlocked(prev => Math.max(prev, level + 1)) }
 
   const handleClick = async (block) => {
     if (!block || block.block_type !== 'destructor' || status !== 'playing' || animationState !== 'idle') return
     if (!validMoves.has(block.id)) return
     playSound('click', preferences.sound)
     try {
-      const res = await fetch('/api/click', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ block_id: block.id, current_state: { board, score, moves } })
-      })
+      const res = await fetch('/api/click', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ block_id: block.id, current_state: { board, score, moves } }) })
       const data = await res.json()
       if (data.error) { setMessage(data.error); return }
       setLastPoints(data.score - score)
@@ -251,13 +216,11 @@ function App() {
   }
 
   const getBlockColor = (b) => b ? (b.block_type === 'destructor' ? DARKER_COLORS : COLORS)[b.color] : 'transparent'
-
   const toggleSound = () => setPreferences(p => ({ ...p, sound: !p.sound }))
 
   const renderProfiles = () => (
     <div className="profile-screen">
-      <h1>Boxout</h1>
-      <p className="subtitle">Who's Playing?</p>
+      <h1>Boxout</h1><p className="subtitle">Who's Playing?</p>
       <div className="profile-list">
         {profiles.map(p => (
           <div key={p.id} className="profile-card" onClick={() => selectProfile(p)}>
@@ -272,11 +235,7 @@ function App() {
       </div>
       <div className="create-profile">
         <h3>New Profile</h3>
-        <div className="avatar-select">
-          {AVATARS.map(a => (
-            <button key={a} className={`avatar-btn ${selectedAvatar === a ? 'selected' : ''}`} onClick={() => setSelectedAvatar(a)}>{a}</button>
-          ))}
-        </div>
+        <div className="avatar-select">{AVATARS.map(a => <button key={a} className={`avatar-btn ${selectedAvatar === a ? 'selected' : ''}`} onClick={() => setSelectedAvatar(a)}>{a}</button>)}</div>
         <input type="text" placeholder="Username" value={newUsername} onChange={e => setNewUsername(e.target.value)} maxLength={12} />
         <button className="new-game-btn" onClick={createProfile}>Create</button>
       </div>
@@ -291,8 +250,7 @@ function App() {
         <span className="high-score">Best: {currentProfile?.stats.highScore}</span>
         <button className="sound-btn" onClick={toggleSound}>{preferences.sound ? '🔊' : '🔇'}</button>
       </div>
-      <h1>Boxout</h1>
-      <p className="map-subtitle">Select a Level</p>
+      <h1>Boxout</h1><p className="map-subtitle">Select a Level</p>
       <div className="level-nodes">
         {Array.from({ length: TOTAL_LEVELS }, (_, i) => i + 1).map(lvl => (
           <button key={lvl} className={`level-node ${completedLevels[lvl] ? 'completed' : ''} ${level === lvl && screen === 'game' ? 'current' : ''} ${lvl > maxUnlocked ? 'locked' : ''}`}
@@ -306,53 +264,60 @@ function App() {
     </div>
   )
 
-  const renderGame = () => (
-    <div className="game-container">
-      <button className="back-btn" onClick={backToMap}>← Map</button>
-      <h1>Boxout</h1>
-      <div className="level-display">Level {level}</div>
-      <div className="level-info">{gridSize}×{gridSize} grid</div>
-      <div className="score-display">
-        <span className="score-label">Score</span>
-        <span className="score-value">{score}</span>
-        {lastPoints > 0 && <span className="points-popup">+{lastPoints}</span>}
+  const renderGame = () => {
+    const personalBest = levelScores[level] || 0
+    return (
+      <div className="game-container">
+        <button className="back-btn" onClick={backToMap}>← Map</button>
+        <h1>Boxout</h1>
+        <div className="level-display">Level {level}</div>
+        <div className="level-info">{gridSize}×{gridSize} grid • Best: {personalBest}</div>
+        <div className="score-display">
+          <span className="score-label">Score</span>
+          <span className="score-value">{score}</span>
+          {lastPoints > 0 && <span className="points-popup">+{lastPoints}</span>}
+        </div>
+        {message && <div className="message">{message}</div>}
+        {status === 'playing' && (
+          <div className={`board ${animationState}`} style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}>
+            {board.flat().map((block, idx) => {
+              const isValid = block && validMoves.has(block.id)
+              return (
+                <div key={block?.id || `empty-${idx}`}
+                  className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${isValid ? 'valid-move' : ''} ${hoveredBlock === block?.id && isValid ? 'hovered' : ''}`}
+                  style={{ backgroundColor: getBlockColor(block) }}
+                  onClick={() => handleClick(block)}
+                  onMouseEnter={() => setHoveredBlock(block?.id)}
+                  onMouseLeave={() => setHoveredBlock(null)}
+                />
+              )
+            })}
+          </div>
+        )}
+        {status === 'won' && (
+          <div className="overlay victory">
+            {isNewHighScore && <div className="new-highscore">🏆 NEW HIGH SCORE! 🏆</div>}
+            <div className="confetti">🎊</div>
+            <h2>Level Complete!</h2>
+            <p className="final-score">Score: {score}</p>
+            {personalBest > 0 && score < personalBest && <p className="personal-best">Best: {personalBest}</p>}
+            {score >= personalBest && <p className="personal-best">Personal Best! ⭐</p>}
+            <p>Moves: {moves}</p>
+            {level < TOTAL_LEVELS ? <button onClick={nextLevel} className="new-game-btn next-level-btn">Next Level →</button> : <button onClick={backToMap} className="new-game-btn">All Levels Complete!</button>}
+          </div>
+        )}
+        {status === 'lost' && (
+          <div className="overlay gameover">
+            <h2>💀 Game Over</h2>
+            <p>No destructors left!</p>
+            <p className="final-score">Score: {score}</p>
+            {personalBest > 0 && <p className="personal-best">Best: {personalBest}</p>}
+            <button onClick={() => newGame()} className="new-game-btn">Try Again</button>
+          </div>
+        )}
       </div>
-      {message && <div className="message">{message}</div>}
-      {status === 'playing' && (
-        <div className={`board ${animationState}`} style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}>
-          {board.flat().map((block, idx) => {
-            const isValid = block && validMoves.has(block.id)
-            return (
-              <div key={block?.id || `empty-${idx}`}
-                className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${isValid ? 'valid-move' : ''} ${hoveredBlock === block?.id && isValid ? 'hovered' : ''}`}
-                style={{ backgroundColor: getBlockColor(block) }}
-                onClick={() => handleClick(block)}
-                onMouseEnter={() => setHoveredBlock(block?.id)}
-                onMouseLeave={() => setHoveredBlock(null)}
-              />
-            )
-          })}
-        </div>
-      )}
-      {status === 'won' && (
-        <div className="overlay victory">
-          <div className="confetti">🎊</div>
-          <h2>Level Complete!</h2>
-          <p className="final-score">Score: {score}</p>
-          <p>Moves: {moves}</p>
-          {level < TOTAL_LEVELS ? <button onClick={nextLevel} className="new-game-btn next-level-btn">Next Level →</button> : <button onClick={backToMap} className="new-game-btn">All Levels Complete!</button>}
-        </div>
-      )}
-      {status === 'lost' && (
-        <div className="overlay gameover">
-          <h2>💀 Game Over</h2>
-          <p>No destructors left!</p>
-          <p className="final-score">Score: {score}</p>
-          <button onClick={() => newGame()} className="new-game-btn">Try Again</button>
-        </div>
-      )}
-    </div>
-  )
+    )
+  }
 
   if (screen === 'profiles') return renderProfiles()
   if (screen === 'map') return renderMap()
