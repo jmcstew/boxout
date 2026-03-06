@@ -349,3 +349,119 @@ h1 { font-size: 3rem; background: linear-gradient(135deg, #E53935, #1E88E5, #8E2
 .challenge-win { background: linear-gradient(135deg, #22c55e, #16a34a); padding: 10px; border-radius: 8px; font-weight: 600; margin-bottom: 10px; }
 
 .friends-btn { background: linear-gradient(135deg, #22c55e, #16a34a); }
+
+/* Help Button & Modal */
+.help-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #8E24AA, #1E88E5);
+  border: none;
+  color: white;
+  font-size: 1.3rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  z-index: 10;
+}
+.help-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 20px rgba(142, 36, 170, 0.5);
+}
+
+.help-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.2s ease-out;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.help-modal {
+  background: linear-gradient(145deg, #1e1e3a, #2a2a4a);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 35px;
+  max-width: 480px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+  animation: popIn 0.3s ease-out;
+}
+
+.help-modal h2 {
+  font-size: 2rem;
+  text-align: center;
+  margin-bottom: 25px;
+  background: linear-gradient(135deg, #E53935, #1E88E5, #8E24AA);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.help-close {
+  position: absolute;
+  top: 15px;
+  right: 20px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 2rem;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.help-close:hover { color: white; }
+
+.help-section {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+}
+
+.help-section h3 {
+  font-size: 1.1rem;
+  margin-bottom: 8px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.help-section p {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.5;
+}
+
+.help-colors {
+  list-style: none;
+  padding: 0;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.help-colors li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+.color-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  display: inline-block;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}

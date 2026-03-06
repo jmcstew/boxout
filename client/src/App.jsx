@@ -89,6 +89,7 @@ function App() {
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0])
   const [friendToAdd, setFriendToAdd] = useState('')
   const [challengeTarget, setChallengeTarget] = useState(null)
+  const [showHelp, setShowHelp] = useState(false)
 
   useEffect(() => {
     setProfiles(loadFromStorage(STORAGE_KEYS.PROFILES, []))
@@ -339,7 +340,53 @@ function App() {
     return (
       <div className="game-container">
         <button className="back-btn" onClick={backToMap}>← Map</button>
+        <button className="help-btn" onClick={() => setShowHelp(true)}>?</button>
         <h1>Boxout</h1>
+        {showHelp && (
+          <div className="help-overlay" onClick={() => setShowHelp(false)}>
+            <div className="help-modal" onClick={e => e.stopPropagation()}>
+              <button className="help-close" onClick={() => setShowHelp(false)}>×</button>
+              <h2>How to Play</h2>
+              <div className="help-content">
+                <div className="help-section">
+                  <h3>🎯 Goal</h3>
+                  <p>Clear all blocks from the board to complete the level.</p>
+                </div>
+                <div className="help-section">
+                  <h3>✕ Destructors</h3>
+                  <p>Blocks marked with an <strong>✕</strong> are <strong>destructors</strong>. These are the only blocks you can click. They appear darker than regular blocks.</p>
+                </div>
+                <div className="help-section">
+                  <h3>💥 Destroying Blocks</h3>
+                  <p>Click a destructor to destroy it along with any adjacent (up/down/left/right) blocks of the <strong>same color</strong>. Destructors cannot destroy other destructors — only regular blocks.</p>
+                </div>
+                <div className="help-section">
+                  <h3>⬇️ Gravity</h3>
+                  <p>After blocks are destroyed, remaining blocks fall down to fill the gaps. No new blocks appear from the top.</p>
+                </div>
+                <div className="help-section">
+                  <h3>⭐ Scoring</h3>
+                  <p>Each block destroyed earns points based on its color:</p>
+                  <ul className="help-colors">
+                    <li><span className="color-dot" style={{ background: '#E53935' }}></span> Red: 10 pts</li>
+                    <li><span className="color-dot" style={{ background: '#1E88E5' }}></span> Blue: 15 pts</li>
+                    <li><span className="color-dot" style={{ background: '#FDD835' }}></span> Yellow: 20 pts</li>
+                    <li><span className="color-dot" style={{ background: '#43A047' }}></span> Green: 25 pts</li>
+                    <li><span className="color-dot" style={{ background: '#8E24AA' }}></span> Purple: 30 pts</li>
+                  </ul>
+                </div>
+                <div className="help-section">
+                  <h3>💀 Game Over</h3>
+                  <p>If you run out of destructors while blocks remain, the level is lost. Try again!</p>
+                </div>
+                <div className="help-section">
+                  <h3>💡 Tips</h3>
+                  <p>Blocks with a <strong>green glow</strong> are valid moves — they have at least one adjacent same-color block to destroy. Plan your moves carefully!</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="level-display">Level {level}</div>
         <div className="level-info">{gridSize}×{gridSize} grid • Best: {personalBest}{challengeTarget && challengeScore > 0 && <span className="challenge-score"> • Beat {challengeTarget.username}: {challengeScore}</span>}</div>
         <div className="score-display">
