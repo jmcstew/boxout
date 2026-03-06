@@ -19,7 +19,7 @@ const playSound = (type, enabled) => {
     osc.connect(gain)
     gain.connect(ctx.destination)
     switch (type) {
-      case 'click': osc.frequency.setValueAtTime(440, ctx.currentrequency.exponentialRTime); osc.fampToValueAtTime(880, ctx.currentTime + 0.1); gain.gain.setValueAtTime(0.3, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1); osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.1); break
+      case 'click': osc.frequency.setValueAtTime(440, ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1); gain.gain.setValueAtTime(0.3, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1); osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.1); break
       case 'destroy': osc.type = 'square'; osc.frequency.setValueAtTime(200, ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.3); gain.gain.setValueAtTime(0.2, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3); osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.3); break
       case 'win': [523, 659, 784, 1047].forEach((f, i) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.frequency.setValueAtTime(f, ctx.currentTime + i * 0.15); g.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.15); g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.3); o.start(ctx.currentTime + i * 0.15); o.stop(ctx.currentTime + i * 0.15 + 0.3) }); return
       case 'lose': osc.type = 'sine'; osc.frequency.setValueAtTime(300, ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.5); gain.gain.setValueAtTime(0.3, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5); osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5); return
@@ -90,6 +90,7 @@ function App() {
   const [friendToAdd, setFriendToAdd] = useState('')
   const [challengeTarget, setChallengeTarget] = useState(null)
   const [showHelp, setShowHelp] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   useEffect(() => {
     setProfiles(loadFromStorage(STORAGE_KEYS.PROFILES, []))
@@ -329,7 +330,24 @@ function App() {
       <div className="game-container">
         <button className="back-btn" onClick={backToMap}>← Map</button>
         <button className="help-btn" onClick={() => setShowHelp(true)}>?</button>
+        <button className="settings-btn" onClick={() => setShowSettings(true)}>⚙</button>
         <h1>Boxout</h1>
+        {showSettings && (
+          <div className="help-overlay" onClick={() => setShowSettings(false)}>
+            <div className="help-modal settings-modal" onClick={e => e.stopPropagation()}>
+              <button className="help-close" onClick={() => setShowSettings(false)}>×</button>
+              <h2>⚙️ Settings</h2>
+              <div className="help-content">
+                <div className="settings-row">
+                  <span className="settings-label">{preferences.sound ? '🔊' : '🔇'} Sound Effects</span>
+                  <button className={`toggle-switch ${preferences.sound ? 'on' : 'off'}`} onClick={toggleSound}>
+                    <span className="toggle-knob" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         {showHelp && (
           <div className="help-overlay" onClick={() => setShowHelp(false)}>
             <div className="help-modal" onClick={e => e.stopPropagation()}>
