@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import './App.css'
 
 const COLORS = {
@@ -19,6 +19,107 @@ const DARKER_COLORS = {
 
 const TOTAL_LEVELS = 50
 
+// Audio context for sound effects
+let audioCtx = null
+
+const getAudioContext = () => {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+  }
+  return audioCtx
+}
+
+const playSound = (type) => {
+  try {
+    const ctx = getAudioContext()
+    if (ctx.state === 'suspended') ctx.resume()
+    
+    const oscillator = ctx.createOscillator()
+    const gainNode = ctx.createGain()
+    
+    oscillator.connect(gainNode)
+    gainNode.connect(ctx.destination)
+    
+    switch (type) {
+      case 'click':
+        oscillator.frequency.setValueAtTime(440, ctx.currentTime)
+        oscillator.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1)
+        gainNode.gain.setValueAtTime(0.3, ctx.currentTime)
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1)
+        oscillator.start(ctx.currentTime)
+        oscillator.stop(ctx.currentTime + 0.1)
+        break
+        
+      case 'destroy':
+        oscillator.type = 'square'
+        oscillator.frequency.setValueAtTime(200, ctx.currentTime)
+        oscillator.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.3)
+        gainNode.gain.setValueAtTime(0.2, ctx.currentTime)
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3)
+        oscillator.start(ctx.currentTime)
+        oscillator.stop(ctx.currentTime + 0.3)
+        
+        // Add noise burst
+        const noise = ctx.createOscillator()
+        const noiseGain = ctx.createGain()
+        noise.type = 'sawtooth'
+        noise.frequency.setValueAtTime(100, ctx.currentTime)
+        noiseGain.gain.setValueAtTime(0.1, ctx.currentTime)
+        noiseGain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2)
+        noise.connect(noiseGain)
+        noiseGain.connect(ctx.destination)
+        noise.start(ctx.currentTime)
+        noise.stop(ctx.currentTime + 0.2)
+        break
+        
+      case 'win':
+        // Happy ascending arpeggio
+        const notes = [523, 659, 784, 1047]
+        notes.forEach((freq, i) => {
+          const osc = ctx.createOscillator()
+          const gain = ctx.createGain()
+          osc.connect(gain)
+          gain.connect(ctx.destination)
+          osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.15)
+          gain.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.15)
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.3)
+          osc.start(ctx.currentTime + i * 0.15)
+          osc.stop(ctx.currentTime + i * 0.15 + 0.3)
+        })
+        return
+        
+      case 'lose':
+        // Sad descending
+        oscillator.type = 'sine'
+        oscillator.frequency.setValueAtTime(300, ctx.currentTime)
+        oscillator.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.5)
+        gainNode.gain.setValueAtTime(0.3, ctx.currentTime)
+        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5)
+        oscillator.start(ctx.currentTime)
+        oscillator.stop(ctx.currentTime + 0.5)
+        
+        // Second descending tone
+        const osc2 = ctx.createOscillator()
+        const gain2 = ctx.createGain()
+        osc2.type = 'sine'
+        osc2.connect(gain2)
+        gain2.connect(ctx.destination)
+        osc2.frequency.setValueAtTime(250, ctx.currentTime + 0.2)
+        osc2.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.7)
+        gain2.gain.setValueAtTime(0.2, ctx.currentTime + 0.2)
+        gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.7)
+        osc2.start(ctx.currentTime + 0.2)
+        osc2.stop(ctx.currentTime + 0.7)
+        return
+        
+      default:
+        break
+    }
+  } catch (e) {
+    console.log('Audio not available')
+  }
+}
+
 function App() {
   const [screen, setScreen] = useState('map')
   const [board, setBoard] = useState([])
@@ -30,9 +131,8 @@ function App() {
   const [status, setStatus] = useState('playing')
   const [message, setMessage] = useState('')
   const [gridSize, setGridSize] = useState(8)
-  const [animationState, setAnimationState] = useState('idle') // idle, destroying, falling
+  const [animationState, setAnimationState] = useState('idle')
   const prevBoardRef = useRef([])
-  const boardRef = useRef(null)
 
   useEffect(() => {
     const saved = localStorage.getItem('boxout_progress')
@@ -42,6 +142,12 @@ function App() {
       setCompletedLevels(data.completed || {})
     }
   }, [])
+
+  // Play sound on status change
+  useEffect(() => {
+    if (status === 'won') playSound('win')
+    if (status === 'lost') playSound('lose')
+  }, [status])
 
   const saveProgress = (unlocked, completed) => {
     localStorage.setItem('boxout_progress', JSON.stringify({ maxUnlocked: unlocked, completed }))
@@ -95,6 +201,8 @@ function App() {
   const handleClick = async (block) => {
     if (!block || block.block_type !== 'destructor' || status !== 'playing' || animationState !== 'idle') return
     
+    playSound('click')
+    
     try {
       const response = await fetch('/api/click', {
         method: 'POST',
@@ -108,20 +216,17 @@ function App() {
         return
       }
       
-      // Store previous board for animation tracking
       prevBoardRef.current = board
-      
-      // Trigger destruction animation
       setAnimationState('destroying')
       
       setTimeout(() => {
+        playSound('destroy')
         setBoard(data.board)
         setScore(data.score)
         setMoves(data.moves)
         setStatus(data.status)
         setMessage('')
         
-        // Then trigger falling animation
         setAnimationState('falling')
         
         setTimeout(() => {
@@ -174,18 +279,10 @@ function App() {
       {message && <div className="message">{message}</div>}
       
       {status === 'playing' && (
-        <div 
-          ref={boardRef}
-          className={`board ${animationState}`}
-          style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}
-        >
+        <div className={`board ${animationState}`} style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}>
           {board.flat().map((block, idx) => (
-            <div 
-              key={block?.id || `empty-${idx}`} 
-              className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${animationState === 'destroying' ? 'destroying' : ''}`}
-              style={{ backgroundColor: getBlockColor(block) }}
-              onClick={() => handleClick(block)}
-            />
+            <div key={block?.id || `empty-${idx}`} className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${animationState === 'destroying' ? 'destroying' : ''}`}
+              style={{ backgroundColor: getBlockColor(block) }} onClick={() => handleClick(block)} />
           ))}
         </div>
       )}
