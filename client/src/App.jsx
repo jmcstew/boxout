@@ -208,18 +208,6 @@ function App() {
     }
     if (animationState !== 'idle') return
 
-    // Check if this is a valid move (has adjacent same-color)
-    if (!hasAdjacentSameColor(board, block.row, block.col)) {
-      setMessage('Need adjacent same-color block to destroy!')
-      return
-    }
-
-    // Double-check against validMoves set
-    if (!validMoves.has(block.id)) {
-      setMessage('Invalid move - find a block with matching neighbor!')
-      return
-    }
-
     playSound('click', preferences.sound)
 
     try {
@@ -398,7 +386,7 @@ function App() {
         {status === 'playing' && (
           <div className={`board ${animationState}`} style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}>
             {board.flat().map((block, idx) => {
-              const isValid = block && block.block_type === 'destructor' && hasAdjacentSameColor(board, block.row, block.col)
+              const isValid = block && block.block_type === 'destructor'
               const isHovered = hoveredBlock === block?.id
               return (
                 <div key={block?.id || `empty-${idx}`}
