@@ -4,7 +4,7 @@ import './App.css'
 const COLORS = { red: '#E53935', blue: '#1E88E5', yellow: '#FDD835', green: '#43A047', purple: '#8E24AA' }
 const DARKER_COLORS = { red: '#B71C1C', blue: '#0D47A1', yellow: '#F9A825', green: '#2E7D32', purple: '#6A1B9A' }
 const TOTAL_LEVELS = 50
-const AVATARS = ['🦊', '🐼', '🦁', '🐯', '🐨', '🐙', '🦄', '🐲', '🦅', '🐙']
+const AVATARS = ['🦊', '🐼', '🦁', '🐯', '🐨', '🐙', '🦄', '🐲', '🦅', '🦖']
 
 let audioCtx = null
 const getAudioContext = () => { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); return audioCtx }
@@ -65,10 +65,10 @@ const findValidMoves = (board) => {
 
 function App() {
   const [screen, setScreen] = useState('profiles')
-  const [profiles, setProfiles] = useState([])
+  const [profiles, setProfiles] = useState(() => loadFromStorage(STORAGE_KEYS.PROFILES, []))
   const [currentProfile, setCurrentProfile] = useState(null)
-  const [preferences, setPreferences] = useState({ sound: true })
-  const [levelScores, setLevelScores] = useState({})
+  const [preferences, setPreferences] = useState(() => loadFromStorage(STORAGE_KEYS.PREFERENCES, { sound: true }))
+  const [levelScores, setLevelScores] = useState(() => loadFromStorage(STORAGE_KEYS.LEVEL_SCORES, {}))
   const [leaderboard, setLeaderboard] = useState([])
   const [board, setBoard] = useState([])
   const [score, setScore] = useState(0)
@@ -91,11 +91,29 @@ function App() {
   const [destroyingIds, setDestroyingIds] = useState(new Set())
 
   useEffect(() => {
-    setProfiles(loadFromStorage(STORAGE_KEYS.PROFILES, []))
-    setPreferences(loadFromStorage(STORAGE_KEYS.PREFERENCES, { sound: true }))
-    setLevelScores(loadFromStorage(STORAGE_KEYS.LEVEL_SCORES, {}))
     fetchLeaderboard()
+    fetchLevelRecords()
   }, [])
+
+  const fetchLevelRecords = async () => {
+    try {
+      const res = await fetch('/api/level-records')
+      const data = await res.json()
+      // Merge with local storage, using a simple merge where server data takes precedence if newer
+      // Actually, server data is global so it should probably be the truth for records
+      setLevelScores(prev => ({ ...prev, ...data }))
+    } catch { }
+  }
+
+  const submitLevelRecord = async (payload) => {
+    try {
+      await fetch('/api/submit-level-record', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+    } catch { }
+  }
 
   useEffect(() => { saveToStorage(STORAGE_KEYS.PREFERENCES, preferences) }, [preferences])
   useEffect(() => { saveToStorage(STORAGE_KEYS.LEVEL_SCORES, levelScores) }, [levelScores])
@@ -115,9 +133,10 @@ function App() {
   }
 
   const submitToLeaderboard = async () => {
-    if (!currentProfile?.stats.highScore) return
+    if (!currentProfile) return
+    const cumulativeScore = Object.values(levelScores).reduce((sum, item) => sum + (typeof item === 'object' ? (item.username === currentProfile.username ? item.score : 0) : item), 0)
     try {
-      await fetch('/api/leaderboard', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: currentProfile.username, avatar: currentProfile.avatar, level: TOTAL_LEVELS, score: currentProfile.stats.highScore }) })
+      await fetch('/api/leaderboard', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: currentProfile.username, avatar: currentProfile.avatar, level: TOTAL_LEVELS, score: cumulativeScore }) })
       fetchLeaderboard()
     } catch { }
   }
@@ -134,23 +153,66 @@ function App() {
   const selectProfile = (profile) => { setCurrentProfile(profile); setMaxUnlocked(profile.progress.maxUnlocked); setCompletedLevels(profile.progress.completed); setScreen('map') }
   const deleteProfile = (id) => { saveProfiles(profiles.filter(p => p.id !== id)); if (currentProfile?.id === id) { setCurrentProfile(null); setScreen('profiles') } }
 
-  const updateProfileStats = (newStats) => {
+  const updateProfileStats = (newStats, updatedLevelScores = levelScores) => {
     if (!currentProfile) return
-    const updated = { ...currentProfile, stats: newStats, progress: { maxUnlocked, completed: completedLevels } }
+    // Calculate cumulative high score based on all levels using the passed or current data
+    const totalScore = Object.values(updatedLevelScores).reduce((sum, item) => {
+      if (typeof item === 'object') {
+        return sum + (item.username === currentProfile.username ? (item.score || 0) : 0)
+      }
+      return sum + (item || 0)
+    }, 0)
+
+    const updated = { ...currentProfile, stats: { ...newStats, highScore: totalScore }, progress: { maxUnlocked, completed: completedLevels } }
     saveProfiles(profiles.map(p => p.id === updated.id ? updated : p))
     setCurrentProfile(updated)
   }
 
   useEffect(() => {
     if (!currentProfile) return
-    const prevHighScore = levelScores[level] || 0
+    const prevStats = levelScores[level] || { score: 0, username: '', moves: Infinity, movesUsername: '' }
     if (status === 'won') {
-      const isNewHS = score > prevHighScore
-      if (isNewHS) { playSound('highscore', preferences.sound); setIsNewHighScore(true); setLevelScores(prev => ({ ...prev, [level]: score })) }
-      const newStats = { ...currentProfile.stats, played: currentProfile.stats.played + 1, won: currentProfile.stats.won + 1, highScore: Math.max(currentProfile.stats.highScore, score) }
-      updateProfileStats(newStats)
+      const isNewHS = score > (prevStats.score || 0)
+      const isNewMovesRecord = moves < (prevStats.moves || Infinity)
+
+      let nextLevelScores = levelScores
+      if (isNewHS || isNewMovesRecord) {
+        if (isNewHS) playSound('highscore', preferences.sound)
+        setIsNewHighScore(isNewHS)
+
+        const updatedEntry = {
+          score: isNewHS ? score : (prevStats.score || 0),
+          username: isNewHS ? currentProfile.username : (prevStats.username || ''),
+          moves: isNewMovesRecord ? moves : (prevStats.moves || Infinity),
+          movesUsername: isNewMovesRecord ? currentProfile.username : (prevStats.movesUsername || '')
+        }
+
+        nextLevelScores = { ...levelScores, [level]: updatedEntry }
+        setLevelScores(nextLevelScores)
+
+        // Submit to SQLite DB
+        submitLevelRecord({
+          level,
+          username: currentProfile.username,
+          avatar: currentProfile.avatar,
+          score: score,
+          moves: moves,
+          is_new_score: isNewHS,
+          is_new_moves: isNewMovesRecord
+        })
+      }
+
+      const newStats = {
+        ...currentProfile.stats,
+        played: currentProfile.stats.played + 1,
+        won: currentProfile.stats.won + 1
+      }
+      updateProfileStats(newStats, nextLevelScores)
     }
-    if (status === 'lost') { const newStats = { ...currentProfile.stats, played: currentProfile.stats.played + 1, lost: currentProfile.stats.lost + 1 }; updateProfileStats(newStats) }
+    if (status === 'lost') {
+      const newStats = { ...currentProfile.stats, played: currentProfile.stats.played + 1, lost: currentProfile.stats.lost + 1 }
+      updateProfileStats(newStats, levelScores)
+    }
   }, [status])
 
   useEffect(() => { if (status === 'won') playSound('win', preferences.sound); if (status === 'lost') playSound('lose', preferences.sound) }, [status])
@@ -163,6 +225,7 @@ function App() {
   }
 
   const newGame = async (lvl = level) => {
+    fetchLevelRecords() // Refresh global records every time we start a level
     try {
       const res = await fetch('/api/new-game', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ level: lvl }) })
       const data = await res.json()
@@ -259,7 +322,11 @@ function App() {
           <button key={lvl} className={`level-node ${completedLevels[lvl] ? 'completed' : ''} ${level === lvl && screen === 'game' ? 'current' : ''} ${lvl > maxUnlocked ? 'locked' : ''}`}
             onClick={() => startLevel(lvl)} disabled={lvl > maxUnlocked}>
             {completedLevels[lvl] ? '✓' : lvl}
-            {levelScores[lvl] > 0 && <span className="level-score">{levelScores[lvl]}</span>}
+            {levelScores[lvl] && (levelScores[lvl].score || levelScores[lvl]) > 0 && (
+              <span className="level-score">
+                {typeof levelScores[lvl] === 'object' ? levelScores[lvl].score : levelScores[lvl]}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -286,7 +353,14 @@ function App() {
   )
 
   const renderGame = () => {
-    const personalBest = levelScores[level] || 0
+    const levelStats = levelScores[level] || { score: 0, username: 'N/A', avatar: '', moves: Infinity, movesUsername: 'N/A', movesAvatar: '' }
+    const scoreRecord = typeof levelStats === 'object' ? (levelStats.score || 0) : levelStats
+    const personalBest = scoreRecord
+    const scoreHolder = typeof levelStats === 'object' ? (levelStats.username || 'N/A') : 'N/A'
+    const scoreAvatar = typeof levelStats === 'object' ? (levelStats.avatar || '') : ''
+    const moveRecord = typeof levelStats === 'object' ? (levelStats.moves || '--') : '--'
+    const moveHolder = typeof levelStats === 'object' ? (levelStats.movesUsername || 'N/A') : 'N/A'
+    const moveAvatar = typeof levelStats === 'object' ? (levelStats.movesAvatar || '') : ''
     return (
       <div className="game-container">
         <button className="back-btn" onClick={backToMap}>← Map</button>
@@ -355,7 +429,10 @@ function App() {
           </div>
         )}
         <div className="level-display">Level {level}</div>
-        <div className="level-info">{gridSize}×{gridSize} grid • Best: {personalBest}</div>
+        <div className="level-info">
+          <div>Record: {scoreRecord} {scoreRecord > 0 && <span className="record-txt">by {scoreAvatar} {scoreHolder}</span>}</div>
+          <div>Efficiency: {moveRecord === Infinity ? '--' : moveRecord} moves {moveRecord !== Infinity && <span className="record-txt">by {moveAvatar} {moveHolder}</span>}</div>
+        </div>
         <div className="score-display">
           <span className="score-label">Score</span>
           <span className="score-value">{score}</span>

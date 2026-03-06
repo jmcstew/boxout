@@ -18,17 +18,6 @@ app.add_middleware(
 )
 
 DB_PATH = "/tmp/boxout_leaderboard.db"
-
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS leaderboard
-                 (id INTEGER PRIMARY KEY, username TEXT, avatar TEXT, level INTEGER, score INTEGER, timestamp TEXT)''')
-    conn.commit()
-    conn.close()
-
-init_db()
-
 COLOR_POINTS = {"red": 10, "blue": 15, "yellow": 20, "green": 25, "purple": 30}
 
 class Block(BaseModel):
@@ -64,6 +53,29 @@ class ClickResponse(BaseModel):
     moves: int
     status: str
     destroyed_ids: List[int]
+
+class LevelRecordSubmit(BaseModel):
+    level: int
+    username: str
+    avatar: str
+    score: int
+    moves: int
+    is_new_score: bool
+    is_new_moves: bool
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS leaderboard
+                 (id INTEGER PRIMARY KEY, username TEXT, avatar TEXT, level INTEGER, score INTEGER, timestamp TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS level_records
+                 (level INTEGER PRIMARY KEY, 
+                  score_username TEXT, score_avatar TEXT, high_score INTEGER,
+                  moves_username TEXT, moves_avatar TEXT, min_moves INTEGER)''')
+    conn.commit()
+    conn.close()
+
+init_db()
 
 def get_difficulty_for_level(level: int) -> dict:
     if level <= 10: rows, cols = 8, 8
@@ -313,6 +325,44 @@ async def submit_score(request: SubmitScoreRequest):
     c = conn.cursor()
     c.execute("INSERT INTO leaderboard (username, avatar, level, score, timestamp) VALUES (?, ?, ?, ?, ?)",
                (request.username, request.avatar, request.level, request.score, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    return {"success": True}
+
+@app.get("/api/level-records")
+async def get_level_records():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM level_records")
+    rows = c.fetchall()
+    conn.close()
+    result = {}
+    for r in rows:
+        result[r[0]] = {
+            "score": r[3], "username": r[1], "avatar": r[2],
+            "moves": r[6], "movesUsername": r[4], "movesAvatar": r[5]
+        }
+    return result
+
+@app.post("/api/submit-level-record")
+async def submit_level_record(request: LevelRecordSubmit):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM level_records WHERE level = ?", (request.level,))
+    exists = c.fetchone()
+    if not exists:
+        c.execute("""INSERT INTO level_records 
+                     (level, score_username, score_avatar, high_score, moves_username, moves_avatar, min_moves)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                  (request.level, request.username, request.avatar, request.score, 
+                   request.username, request.avatar, request.moves))
+    else:
+        if request.is_new_score:
+            c.execute("UPDATE level_records SET score_username = ?, score_avatar = ?, high_score = ? WHERE level = ?",
+                      (request.username, request.avatar, request.score, request.level))
+        if request.is_new_moves:
+            c.execute("UPDATE level_records SET moves_username = ?, moves_avatar = ?, min_moves = ? WHERE level = ?",
+                      (request.username, request.avatar, request.moves, request.level))
     conn.commit()
     conn.close()
     return {"success": True}
