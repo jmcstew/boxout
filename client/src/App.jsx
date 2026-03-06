@@ -19,6 +19,8 @@ const DARKER_COLORS = {
 
 const TOTAL_LEVELS = 50
 
+const AVATARS = ['🦊', '🐼', '🦁', '🐯', '🐨', '🐙', '🦄', '🐲', '🦅', '🐙']
+
 let audioCtx = null
 
 const getAudioContext = () => {
@@ -30,12 +32,10 @@ const playSound = (type) => {
   try {
     const ctx = getAudioContext()
     if (ctx.state === 'suspended') ctx.resume()
-    
     const oscillator = ctx.createOscillator()
     const gainNode = ctx.createGain()
     oscillator.connect(gainNode)
     gainNode.connect(ctx.destination)
-    
     switch (type) {
       case 'click':
         oscillator.frequency.setValueAtTime(440, ctx.currentTime)
@@ -84,20 +84,16 @@ const playSound = (type) => {
 
 function findValidMoves(board) {
   if (!board || board.length === 0) return new Set()
-  
   const validMoves = new Set()
   const rows = board.length
   const cols = board[0].length
-  
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const block = board[r]?.[c]
       if (block && block.block_type === 'destructor') {
-        // Check adjacent for same color
         const directions = [[-1,0],[1,0],[0,-1],[0,1]]
         for (const [dr, dc] of directions) {
-          const nr, nc = r + dr, c + dc
-          const adj = board[nr]?.[nc]
+          const adj = board[r+dr]?.[c+dc]
           if (adj && adj.color === block.color) {
             validMoves.add(block.id)
             break
@@ -110,7 +106,9 @@ function findValidMoves(board) {
 }
 
 function App() {
-  const [screen, setScreen] = useState('map')
+  const [screen, setScreen] = useState('profiles') // profiles, map, game
+  const [profiles, setProfiles] = useState([])
+  const [currentProfile, setCurrentProfile] = useState(null)
   const [board, setBoard] = useState([])
   const [score, setScore] = useState(0)
   const [moves, setMoves] = useState(0)
@@ -124,15 +122,71 @@ function App() {
   const [validMoves, setValidMoves] = useState(new Set())
   const [hoveredBlock, setHoveredBlock] = useState(null)
   const [lastPoints, setLastPoints] = useState(0)
+  const [newUsername, setNewUsername] = useState('')
+  const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0])
 
   useEffect(() => {
-    const saved = localStorage.getItem('boxout_progress')
+    loadProfiles()
+  }, [])
+
+  const loadProfiles = () => {
+    const saved = localStorage.getItem('boxout_profiles')
     if (saved) {
       const data = JSON.parse(saved)
-      setMaxUnlocked(data.maxUnlocked || 1)
-      setCompletedLevels(data.completed || {})
+      setProfiles(data)
     }
-  }, [])
+  }
+
+  const saveProfiles = (newProfiles) => {
+    localStorage.setItem('boxout_profiles', JSON.stringify(newProfiles))
+    setProfiles(newProfiles)
+  }
+
+  const createProfile = () => {
+    if (!newUsername.trim()) return
+    const newProfile = {
+      id: Date.now(),
+      username: newUsername.trim(),
+      avatar: selectedAvatar,
+      stats: { played: 0, won: 0, lost: 0, highScore: 0 },
+      progress: { maxUnlocked: 1, completed: {} }
+    }
+    saveProfiles([...profiles, newProfile])
+    setNewUsername('')
+  }
+
+  const selectProfile = (profile) => {
+    setCurrentProfile(profile)
+    setMaxUnlocked(profile.progress.maxUnlocked)
+    setCompletedLevels(profile.progress.completed)
+    setScreen('map')
+  }
+
+  const deleteProfile = (id) => {
+    saveProfiles(profiles.filter(p => p.id !== id))
+    if (currentProfile?.id === id) {
+      setCurrentProfile(null)
+      setScreen('profiles')
+    }
+  }
+
+  const updateStats = (newStats) => {
+    if (!currentProfile) return
+    const updated = { ...currentProfile, stats: newStats, progress: { maxUnlocked, completed: completedLevels } }
+    saveProfiles(profiles.map(p => p.id === updated.id ? updated : p))
+    setCurrentProfile(updated)
+  }
+
+  useEffect(() => {
+    if (status === 'won' && currentProfile) {
+      const newStats = { ...currentProfile.stats, played: currentProfile.stats.played + 1, won: currentProfile.stats.won + 1, highScore: Math.max(currentProfile.stats.highScore, score) }
+      updateStats(newStats)
+    }
+    if (status === 'lost' && currentProfile) {
+      const newStats = { ...currentProfile.stats, played: currentProfile.stats.played + 1, lost: currentProfile.stats.lost + 1 }
+      updateStats(newStats)
+    }
+  }, [status])
 
   useEffect(() => {
     if (status === 'won') playSound('win')
@@ -142,10 +196,6 @@ function App() {
   useEffect(() => {
     setValidMoves(findValidMoves(board))
   }, [board])
-
-  const saveProgress = (unlocked, completed) => {
-    localStorage.setItem('boxout_progress', JSON.stringify({ maxUnlocked: unlocked, completed }))
-  }
 
   const getGridSize = (lvl) => {
     if (lvl <= 10) return 8
@@ -181,7 +231,13 @@ function App() {
     }
   }
 
-  const backToMap = () => setScreen('map')
+  const backToMap = () => {
+    if (currentProfile) {
+      const updated = { ...currentProfile, progress: { maxUnlocked, completed: completedLevels } }
+      saveProfiles(profiles.map(p => p.id === updated.id ? updated : p))
+    }
+    setScreen('map')
+  }
 
   const nextLevel = () => {
     if (level + 1 <= TOTAL_LEVELS) {
@@ -190,6 +246,13 @@ function App() {
       setGridSize(getGridSize(nextLvl))
       newGame(nextLvl)
     }
+  }
+
+  const handleLevelComplete = () => {
+    const newCompleted = { ...completedLevels, [level]: true }
+    setCompletedLevels(newCompleted)
+    const nextUnlocked = Math.max(maxUnlocked, level + 1)
+    setMaxUnlocked(nextUnlocked)
   }
 
   const handleClick = async (block) => {
@@ -206,15 +269,9 @@ function App() {
       })
       const data = await response.json()
       
-      if (data.error) {
-        setMessage(data.error)
-        return
-      }
+      if (data.error) { setMessage(data.error); return }
       
-      // Calculate points for animation
-      const pointsEarned = data.score - score
-      setLastPoints(pointsEarned)
-      
+      setLastPoints(data.score - score)
       setAnimationState('destroying')
       
       setTimeout(() => {
@@ -222,9 +279,11 @@ function App() {
         setBoard(data.board)
         setScore(data.score)
         setMoves(data.moves)
+        
+        if (data.status === 'won') handleLevelComplete()
+        
         setStatus(data.status)
         setMessage('')
-        
         setAnimationState('falling')
         
         setTimeout(() => {
@@ -232,10 +291,7 @@ function App() {
           setLastPoints(0)
         }, 350)
       }, 300)
-      
-    } catch (err) {
-      setMessage('Error')
-    }
+    } catch (err) { setMessage('Error') }
   }
 
   const getBlockColor = (block) => {
@@ -243,8 +299,45 @@ function App() {
     return (block.block_type === 'destructor' ? DARKER_COLORS : COLORS)[block.color]
   }
 
+  // Profile Selection Screen
+  const renderProfiles = () => (
+    <div className="profile-screen">
+      <h1>Boxout</h1>
+      <p className="subtitle">Who's Playing?</p>
+      
+      <div className="profile-list">
+        {profiles.map(p => (
+          <div key={p.id} className="profile-card" onClick={() => selectProfile(p)}>
+            <span className="profile-avatar">{p.avatar}</span>
+            <div className="profile-info">
+              <span className="profile-name">{p.username}</span>
+              <span className="profile-stats">High Score: {p.stats.highScore}</span>
+            </div>
+            <button className="delete-btn" onClick={(e) => { e.stopPropagation(); deleteProfile(p.id) }}>×</button>
+          </div>
+        ))}
+      </div>
+      
+      <div className="create-profile">
+        <h3>New Profile</h3>
+        <div className="avatar-select">
+          {AVATARS.map(a => (
+            <button key={a} className={`avatar-btn ${selectedAvatar === a ? 'selected' : ''}`} onClick={() => setSelectedAvatar(a)}>{a}</button>
+          ))}
+        </div>
+        <input type="text" placeholder="Username" value={newUsername} onChange={e => setNewUsername(e.target.value)} maxLength={12} />
+        <button className="new-game-btn" onClick={createProfile}>Create</button>
+      </div>
+    </div>
+  )
+
   const renderMap = () => (
     <div className="world-map">
+      <div className="profile-header">
+        <span className="profile-avatar small">{currentProfile?.avatar}</span>
+        <span>{currentProfile?.username}</span>
+        <span className="high-score">Best: {currentProfile?.stats.highScore}</span>
+      </div>
       <h1>Boxout</h1>
       <p className="map-subtitle">Select a Level</p>
       <div className="level-nodes">
@@ -260,6 +353,7 @@ function App() {
           )
         })}
       </div>
+      <button className="back-btn" onClick={() => { setScreen('profiles') }}>Switch Profile</button>
     </div>
   )
 
@@ -284,8 +378,7 @@ function App() {
             const isValid = block && validMoves.has(block.id)
             const isHovered = hoveredBlock === block?.id
             return (
-              <div 
-                key={block?.id || `empty-${idx}`} 
+              <div key={block?.id || `empty-${idx}`} 
                 className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${isValid ? 'valid-move' : ''} ${isHovered && isValid ? 'hovered' : ''}`}
                 style={{ backgroundColor: getBlockColor(block) }} 
                 onClick={() => handleClick(block)}
@@ -322,7 +415,9 @@ function App() {
     </div>
   )
 
-  return screen === 'map' ? renderMap() : renderGame()
+  if (screen === 'profiles') return renderProfiles()
+  if (screen === 'map') return renderMap()
+  return renderGame()
 }
 
 export default App
