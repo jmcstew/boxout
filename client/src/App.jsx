@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 
 const COLORS = {
@@ -30,6 +30,9 @@ function App() {
   const [status, setStatus] = useState('playing')
   const [message, setMessage] = useState('')
   const [gridSize, setGridSize] = useState(8)
+  const [animationState, setAnimationState] = useState('idle') // idle, destroying, falling
+  const prevBoardRef = useRef([])
+  const boardRef = useRef(null)
 
   useEffect(() => {
     const saved = localStorage.getItem('boxout_progress')
@@ -45,8 +48,8 @@ function App() {
   }
 
   const getGridSize = (lvl) => {
-    if (lvl <= 5) return 8
-    if (lvl <= 10) return 9
+    if (lvl <= 10) return 8
+    if (lvl <= 25) return 9
     return 10
   }
 
@@ -67,21 +70,15 @@ function App() {
       })
       const data = await response.json()
       setBoard(data.board)
+      prevBoardRef.current = data.board
       setScore(data.score)
       setMoves(data.moves)
       setStatus(data.status)
       setMessage('')
+      setAnimationState('idle')
     } catch (err) {
       setMessage('Backend not running')
     }
-  }
-
-  const handleLevelComplete = () => {
-    const newCompleted = { ...completedLevels, [level]: true }
-    setCompletedLevels(newCompleted)
-    const nextUnlocked = Math.max(maxUnlocked, level + 1)
-    setMaxUnlocked(nextUnlocked)
-    saveProgress(nextUnlocked, newCompleted)
   }
 
   const backToMap = () => setScreen('map')
@@ -96,7 +93,7 @@ function App() {
   }
 
   const handleClick = async (block) => {
-    if (!block || block.block_type !== 'destructor' || status !== 'playing') return
+    if (!block || block.block_type !== 'destructor' || status !== 'playing' || animationState !== 'idle') return
     
     try {
       const response = await fetch('/api/click', {
@@ -111,11 +108,27 @@ function App() {
         return
       }
       
-      setBoard(data.board)
-      setScore(data.score)
-      setMoves(data.moves)
-      setStatus(data.status)
-      setMessage('')
+      // Store previous board for animation tracking
+      prevBoardRef.current = board
+      
+      // Trigger destruction animation
+      setAnimationState('destroying')
+      
+      setTimeout(() => {
+        setBoard(data.board)
+        setScore(data.score)
+        setMoves(data.moves)
+        setStatus(data.status)
+        setMessage('')
+        
+        // Then trigger falling animation
+        setAnimationState('falling')
+        
+        setTimeout(() => {
+          setAnimationState('idle')
+        }, 350)
+      }, 300)
+      
     } catch (err) {
       setMessage('Error')
     }
@@ -161,11 +174,18 @@ function App() {
       {message && <div className="message">{message}</div>}
       
       {status === 'playing' && (
-        <div className="board" style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}>
+        <div 
+          ref={boardRef}
+          className={`board ${animationState}`}
+          style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}
+        >
           {board.flat().map((block, idx) => (
-            <div key={block?.id || `empty-${idx}`} className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''}`}
-              style={{ backgroundColor: getBlockColor(block) }} onClick={() => handleClick(block)}
-              title={block?.block_type === 'destructor' ? 'Destructor!' : 'Game Piece'} />
+            <div 
+              key={block?.id || `empty-${idx}`} 
+              className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${animationState === 'destroying' ? 'destroying' : ''}`}
+              style={{ backgroundColor: getBlockColor(block) }}
+              onClick={() => handleClick(block)}
+            />
           ))}
         </div>
       )}
