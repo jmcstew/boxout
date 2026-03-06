@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Set, Optional
@@ -17,7 +17,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Database setup
 DB_PATH = "/tmp/boxout_leaderboard.db"
 
 def init_db():
@@ -49,12 +48,6 @@ class NewGameRequest(BaseModel):
     level: int = 1
     seed: Optional[int] = None
 
-class LeaderboardEntry(BaseModel):
-    username: str
-    avatar: str
-    level: int
-    score: int
-
 class SubmitScoreRequest(BaseModel):
     username: str
     avatar: str
@@ -65,7 +58,9 @@ def get_difficulty_for_level(level: int) -> dict:
     if level <= 10: rows, cols = 8, 8
     elif level <= 25: rows, cols = 9, 9
     else: rows, cols = 10, 10
-    destructor_chance = max(0.08, 0.22 - (level - 1) * 0.01) if level <= 10 else max(0.08, 0.18 - (level - 11) * 0.005) if level <= 25 else max(0.08, 0.12 - (level - 26) * 0.002)
+    if level <= 10: destructor_chance = max(0.08, 0.22 - (level - 1) * 0.01)
+    elif level <= 25: destructor_chance = max(0.08, 0.18 - (level - 11) * 0.005)
+    else: destructor_chance = max(0.08, 0.12 - (level - 26) * 0.002)
     colors = ["red", "blue", "green"] if level <= 5 else ["red", "blue", "green", "yellow"] if level <= 15 else ["red", "blue", "green", "yellow", "purple"]
     return {"rows": rows, "cols": cols, "destructor_chance": destructor_chance, "colors": colors}
 
@@ -128,16 +123,6 @@ def apply_gravity_sim(board: List[List[Optional[Block]]]) -> List[List[Optional[
         for i, block in enumerate(new_row): new_board[rows - len(new_row) + i][col] = block
     return new_board
 
-def simulate_click(board: List[List[Optional[Block]]], block_id: int) -> List[List[Optional[Block]]]:
-    rows, cols = len(board), len(board[0])
-    clicked = next((b for row in board for b in row if b and b.id == block_id), None)
-    if not clicked or clicked.block_type != "destructor": return board
-    to_destroy = find_connected(board, clicked.row, clicked.col, clicked.color)
-    to_destroy.add(clicked.id)
-    if len(to_destroy) < 2: return board
-    new_board = [[b if b is None or b.id not in to_destroy else None for b in row] for row in board]
-    return apply_gravity_sim(new_board)
-
 def has_winnable_moves(board: List[List[Optional[Block]]]) -> bool:
     if not board: return False
     rows, cols = len(board), len(board[0])
@@ -159,7 +144,15 @@ def is_solvable(board: List[List[Block]], max_depth: int = 50) -> bool:
                 if block and block.block_type == "destructor":
                     count = len(find_connected(sim_board, r, c, block.color))
                     if count >= 2 and count > best_count: best_count, best_move = count, block.id
-        if best_move: sim_board = simulate_click(sim_board, best_move)
+        if best_move:
+            # Simulate click
+            clicked = next((b for row in sim_board for b in row if b and b.id == best_move), None)
+            if clicked:
+                to_destroy = find_connected(sim_board, clicked.row, clicked.col, clicked.color)
+                to_destroy.add(clicked.id)
+                if len(to_destroy) >= 2:
+                    sim_board = [[b if b is None or b.id not in to_destroy else None for b in row] for row in sim_board]
+                    sim_board = apply_gravity_sim(sim_board)
         else: break
     return not any(b for row in sim_board for b in row if b)
 
@@ -170,18 +163,20 @@ def validate_and_generate(level: int, seed: Optional[int] = None) -> List[List[B
     return board
 
 def check_game_status(board: List[List[Optional[Block]]]) -> str:
-    total = destructors = gamepieces = 0
-    for row in board:
-        for block in row:
-            if block is not None:
-                total += 1
-                if block.block_type == "destructor": destructors += 1
-                else: gamepieces += 1
-    if total == 0: return "won"
-    if destructors == 0 and gamepieces > 0: return "lost"
+    # Check if ALL blocks were destroyed (win)
+    total = sum(1 for row in board for b in row if b is not None)
+    if total == 0:
+        return "won"
+    
+    # Check if no destructors remain but game pieces do (lose)
+    destructors = sum(1 for row in board for b in row if b and b.block_type == "destructor")
+    gamepieces = sum(1 for row in board for b in row if b and b.block_type == "gamepiece")
+    
+    if destructors == 0 and gamepieces > 0:
+        return "lost"
+    
     return "playing"
 
-# API Endpoints
 @app.get("/")
 async def root(): return {"message": "Boxout API", "version": "1.0.0"}
 
@@ -192,23 +187,58 @@ async def new_game(request: NewGameRequest):
 
 @app.post("/api/click")
 async def click_block(block_id: int, current_state: GameState):
+    # Validate input
     rows, cols = len(current_state.board), len(current_state.board[0]) if current_state.board else 0
     if not rows or not cols: return {"error": "Invalid board"}
-    clicked = next((b for row in current_state.board for b in row if b and b.id == block_id), None)
+    if current_state.status != "playing": return {"error": "Game is over"}
+    
+    # Find clicked block
+    clicked = None
+    for row in current_state.board:
+        for block in row:
+            if block and block.id == block_id:
+                clicked = block
+                break
+        if clicked:
+            break
+    
     if not clicked: return {"error": "Block not found"}
     if clicked.block_type != "destructor": return {"error": "Only destructors can be clicked"}
+    
+    # Find adjacent same-color blocks
     target_color = clicked.color
     to_destroy = {clicked.id}
-    for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
-        adj = current_state.board[clicked.row+dr][clicked.col+dc]
-        if adj and adj.color == target_color: to_destroy.add(adj.id)
-    if len(to_destroy) < 2: return {"error": "Need at least 1 adjacent same-color block"}
-    points_per_block = COLOR_POINTS.get(target_color, 10)
+    
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    for dr, dc in directions:
+        adj_row, adj_col = clicked.row + dr, clicked.col + dc
+        if 0 <= adj_row < rows and 0 <= adj_col < cols:
+            adj_block = current_state.board[adj_row][adj_col]
+            if adj_block and adj_block.color == target_color:
+                to_destroy.add(adj_block.id)
+    
+    # Must have at least 2 blocks to destroy (destructor + at least 1 adjacent)
+    if len(to_destroy) < 2:
+        return {"error": "Need at least 1 adjacent same-color block to destroy"}
+    
+    # Process destruction
     new_board = [[b if b is None or b.id not in to_destroy else None for b in row] for row in current_state.board]
     new_board = apply_gravity_sim(new_board)
     new_board = fill_from_top(new_board)
+    
+    # Calculate score
+    points_per_block = COLOR_POINTS.get(target_color, 10)
+    total_points = len(to_destroy) * points_per_block
+    
+    # Check game status
     status = check_game_status(new_board)
-    return GameState(board=new_board, score=current_state.score + len(to_destroy) * points_per_block, moves=current_state.moves + 1, status=status)
+    
+    return GameState(
+        board=new_board,
+        score=current_state.score + total_points,
+        moves=current_state.moves + 1,
+        status=status
+    )
 
 def apply_gravity(board: List[List[Optional[Block]]]) -> List[List[Optional[Block]]]:
     if not board: return board
