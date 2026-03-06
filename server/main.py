@@ -221,26 +221,27 @@ async def click_block(request: ClickRequest):
     if not rows or not cols: return {"error": "Invalid board"}
     if current_state.status != "playing": return {"error": "Game is over"}
     
-    # Find clicked block
+    # Find clicked block and its current position in the grid
     clicked = None
-    for row in current_state.board:
-        for block in row:
+    click_r, click_c = -1, -1
+    for r, row_blocks in enumerate(current_state.board):
+        for c, block in enumerate(row_blocks):
             if block and block.id == block_id:
                 clicked = block
+                click_r, click_c = r, c
                 break
-        if clicked:
-            break
+        if clicked: break
     
     if not clicked: return {"error": "Block not found"}
     if clicked.block_type != "destructor": return {"error": "Only destructors can be clicked"}
     
-    # Find adjacent same-color blocks
+    # Find adjacent same-color blocks (now using actual current grid coordinates)
     target_color = clicked.color
     to_destroy = {clicked.id}
     
     directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
     for dr, dc in directions:
-        adj_row, adj_col = clicked.row + dr, clicked.col + dc
+        adj_row, adj_col = click_r + dr, click_c + dc
         if 0 <= adj_row < rows and 0 <= adj_col < cols:
             adj_block = current_state.board[adj_row][adj_col]
             if adj_block and adj_block.color == target_color and adj_block.block_type != "destructor":
