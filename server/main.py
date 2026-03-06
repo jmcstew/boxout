@@ -48,6 +48,10 @@ class NewGameRequest(BaseModel):
     level: int = 1
     seed: Optional[int] = None
 
+class ClickRequest(BaseModel):
+    block_id: int
+    current_state: GameState
+
 class SubmitScoreRequest(BaseModel):
     username: str
     avatar: str
@@ -186,7 +190,9 @@ async def new_game(request: NewGameRequest):
     return GameState(board=board, score=0, moves=0, status="playing")
 
 @app.post("/api/click")
-async def click_block(block_id: int, current_state: GameState):
+async def click_block(request: ClickRequest):
+    block_id = request.block_id
+    current_state = request.current_state
     # Validate input
     rows, cols = len(current_state.board), len(current_state.board[0]) if current_state.board else 0
     if not rows or not cols: return {"error": "Invalid board"}
@@ -214,17 +220,14 @@ async def click_block(block_id: int, current_state: GameState):
         adj_row, adj_col = clicked.row + dr, clicked.col + dc
         if 0 <= adj_row < rows and 0 <= adj_col < cols:
             adj_block = current_state.board[adj_row][adj_col]
-            if adj_block and adj_block.color == target_color:
+            if adj_block and adj_block.color == target_color and adj_block.block_type != "destructor":
                 to_destroy.add(adj_block.id)
     
-    # Must have at least 2 blocks to destroy (destructor + at least 1 adjacent)
-    if len(to_destroy) < 2:
-        return {"error": "Need at least 1 adjacent same-color block to destroy"}
+
     
     # Process destruction
     new_board = [[b if b is None or b.id not in to_destroy else None for b in row] for row in current_state.board]
     new_board = apply_gravity_sim(new_board)
-    new_board = fill_from_top(new_board)
     
     # Calculate score
     points_per_block = COLOR_POINTS.get(target_color, 10)

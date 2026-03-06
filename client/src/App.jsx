@@ -40,10 +40,7 @@ const findValidMoves = (board) => {
     for (let c = 0; c < cols; c++) {
       const b = board[r]?.[c]
       if (b?.block_type === 'destructor') {
-        for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
-          const adj = board[r+dr]?.[c+dc]
-          if (adj?.color === b.color) { valid.add(b.id); break }
-        }
+        valid.add(b.id)
       }
     }
   }
