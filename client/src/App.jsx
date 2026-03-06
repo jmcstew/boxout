@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import './App.css'
 
 const COLORS = { red: '#E53935', blue: '#1E88E5', yellow: '#FDD835', green: '#43A047', purple: '#8E24AA' }
@@ -19,7 +19,7 @@ const playSound = (type, enabled) => {
     osc.connect(gain)
     gain.connect(ctx.destination)
     switch (type) {
-      case 'click': osc.frequency.setValueAtTime(440, ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1); gain.gain.setValueAtTime(0.3, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1); osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.1); break
+      case 'click': osc.frequency.setValueAtTime(440, ctx.currentrequency.exponentialRTime); osc.fampToValueAtTime(880, ctx.currentTime + 0.1); gain.gain.setValueAtTime(0.3, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1); osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.1); break
       case 'destroy': osc.type = 'square'; osc.frequency.setValueAtTime(200, ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.3); gain.gain.setValueAtTime(0.2, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3); osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.3); break
       case 'win': [523, 659, 784, 1047].forEach((f, i) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.frequency.setValueAtTime(f, ctx.currentTime + i * 0.15); g.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.15); g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.3); o.start(ctx.currentTime + i * 0.15); o.stop(ctx.currentTime + i * 0.15 + 0.3) }); return
       case 'lose': osc.type = 'sine'; osc.frequency.setValueAtTime(300, ctx.currentTime); osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.5); gain.gain.setValueAtTime(0.3, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5); osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5); return
@@ -32,18 +32,31 @@ const STORAGE_KEYS = { PROFILES: 'boxout_proFILES', PREFERENCES: 'boxout_prefere
 const loadFromStorage = (key, fallback) => { try { const data = localStorage.getItem(key); return data ? JSON.parse(data) : fallback } catch { return fallback } }
 const saveToStorage = (key, data) => { try { localStorage.setItem(key, JSON.stringify(data)) } catch {} }
 
+// Helper: Check if a destructor has adjacent same-color blocks
+const hasAdjacentSameColor = (board, row, col) => {
+  if (!board || !board[row] || !board[row][col]) return false
+  const block = board[row][col]
+  if (!block) return false
+  const color = block.color
+  const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]]
+  for (const [dr, dc] of directions) {
+    const nr = row + dr, nc = col + dc
+    if (board[nr] && board[nr][nc] && board[nr][nc].color === color) return true
+  }
+  return false
+}
+
+// Helper: Find all valid moves
 const findValidMoves = (board) => {
-  if (!board?.length) return new Set()
   const valid = new Set()
-  const [rows, cols] = [board.length, board[0].length]
+  if (!board || !board.length) return valid
+  const rows = board.length
+  const cols = board[0].length
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const b = board[r]?.[c]
-      if (b?.block_type === 'destructor') {
-        for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
-          const adj = board[r+dr]?.[c+dc]
-          if (adj?.color === b.color) { valid.add(b.id); break }
-        }
+      const block = board[r]?.[c]
+      if (block && block.block_type === 'destructor' && hasAdjacentSameColor(board, r, c)) {
+        valid.add(block.id)
       }
     }
   }
@@ -89,6 +102,12 @@ function App() {
   useEffect(() => { saveToStorage(STORAGE_KEYS.LEVEL_SCORES, levelScores) }, [levelScores])
   useEffect(() => { saveToStorage(STORAGE_KEYS.FRIENDS, friends) }, [friends])
 
+  // Update valid moves whenever board changes
+  useEffect(() => {
+    const moves = findValidMoves(board)
+    setValidMoves(moves)
+  }, [board])
+
   const fetchLeaderboard = async () => {
     try {
       const res = await fetch('/api/leaderboard?limit=20')
@@ -120,23 +139,18 @@ function App() {
   const addFriend = () => {
     if (!friendToAdd.trim() || friendToAdd.trim() === currentProfile?.username) return
     if (friends.find(f => f.username === friendToAdd.trim())) return
-    const newFriend = { username: friendToAdd.trim(), avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)], highScore: 0 }
-    setFriends([...friends, newFriend])
+    setFriends([...friends, { username: friendToAdd.trim(), avatar: AVATARS[Math.floor(Math.random() * AVATARS.length)], highScore: 0 }])
     setFriendToAdd('')
   }
-
   const removeFriend = (username) => { setFriends(friends.filter(f => f.username !== username)) }
-
-  const updateFriendScore = (username, score) => { setFriends(friends.map(f => f.username === username ? { ...f, highScore: score } : f)) }
-
   const challengeFriend = (friend) => { setChallengeTarget(friend); setScreen('map') }
+  const updateFriendScore = (username, score) => { setFriends(friends.map(f => f.username === username ? { ...f, highScore: score } : f)) }
 
   const updateProfileStats = (newStats) => {
     if (!currentProfile) return
     const updated = { ...currentProfile, stats: newStats, progress: { maxUnlocked, completed: completedLevels } }
     saveProfiles(profiles.map(p => p.id === updated.id ? updated : p))
     setCurrentProfile(updated)
-    // Update friend scores
     friends.forEach(f => { if (f.username === currentProfile.username) updateFriendScore(f.username, newStats.highScore) })
   }
 
@@ -153,10 +167,13 @@ function App() {
   }, [status])
 
   useEffect(() => { if (status === 'won') playSound('win', preferences.sound); if (status === 'lost') playSound('lose', preferences.sound) }, [status])
-  useEffect(() => { setValidMoves(findValidMoves(board)) }, [board])
 
   const getGridSize = (lvl) => lvl <= 10 ? 8 : lvl <= 25 ? 9 : 10
-  const startLevel = (lvl) => { if (lvl > maxUnlocked) return; setLevel(lvl); setGridSize(getGridSize(lvl)); newGame(lvl); setScreen('game'); setIsNewHighScore(false); setChallengeTarget(null) }
+
+  const startLevel = (lvl) => {
+    if (lvl > maxUnlocked) return
+    setLevel(lvl); setGridSize(getGridSize(lvl)); newGame(lvl); setScreen('game'); setIsNewHighScore(false); setChallengeTarget(null)
+  }
 
   const newGame = async (lvl = level) => {
     try {
@@ -178,15 +195,44 @@ function App() {
   const handleLevelComplete = () => { setCompletedLevels(prev => ({ ...prev, [level]: true })); setMaxUnlocked(prev => Math.max(prev, level + 1)) }
 
   const handleClick = async (block) => {
-    if (!block || block.block_type !== 'destructor' || status !== 'playing' || animationState !== 'idle') return
-    if (!validMoves.has(block.id)) return
+    // Block-level validations
+    if (!block) return
+    if (block.block_type !== 'destructor') {
+      setMessage('Only destructors can be clicked')
+      return
+    }
+    if (status !== 'playing') {
+      setMessage('Game is over')
+      return
+    }
+    if (animationState !== 'idle') return
+    
+    // Check if this is a valid move (has adjacent same-color)
+    if (!hasAdjacentSameColor(board, block.row, block.col)) {
+      setMessage('Need adjacent same-color block to destroy!')
+      return
+    }
+    
+    // Double-check against validMoves set
+    if (!validMoves.has(block.id)) {
+      setMessage('Invalid move - find a block with matching neighbor!')
+      return
+    }
+    
     playSound('click', preferences.sound)
+    
     try {
       const res = await fetch('/api/click', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ block_id: block.id, current_state: { board, score, moves } }) })
       const data = await res.json()
-      if (data.error) { setMessage(data.error); return }
+      
+      if (data.error) { 
+        setMessage(data.error)
+        return 
+      }
+      
       setLastPoints(data.score - score)
       setAnimationState('destroying')
+      
       setTimeout(() => {
         playSound('destroy', preferences.sound)
         setBoard(data.board); setScore(data.score); setMoves(data.moves)
@@ -251,36 +297,23 @@ function App() {
 
   const renderFriends = () => (
     <div className="friends-screen">
-      <h1>👥 Friends</h1>
-      <p className="subtitle">Challenge your friends!</p>
-      
+      <h1>👥 Friends</h1><p className="subtitle">Challenge your friends!</p>
       <div className="add-friend">
         <input type="text" placeholder="Friend's username" value={friendToAdd} onChange={e => setFriendToAdd(e.target.value)} maxLength={12} />
         <button className="new-game-btn" onClick={addFriend}>Add Friend</button>
       </div>
-
       <div className="friends-list">
         {friends.map((friend, idx) => (
           <div key={idx} className="friend-card">
             <span className="friend-avatar">{friend.avatar}</span>
-            <div className="friend-info">
-              <span className="friend-name">{friend.username}</span>
-              <span className="friend-score">Best: {friend.highScore || 'N/A'}</span>
-            </div>
-            {friend.highScore > 0 && currentProfile?.stats.highScore < friend.highScore && (
-              <button className="challenge-btn" onClick={() => challengeFriend(friend)}>🥊 Challenge</button>
-            )}
+            <div className="friend-info"><span className="friend-name">{friend.username}</span><span className="friend-score">Best: {friend.highScore || 'N/A'}</span></div>
+            {friend.highScore > 0 && currentProfile?.stats.highScore < friend.highScore && <button className="challenge-btn" onClick={() => challengeFriend(friend)}>🥊 Challenge</button>}
             <button className="remove-friend" onClick={() => removeFriend(friend.username)}>×</button>
           </div>
         ))}
-        {friends.length === 0 && <p className="no-friends">No friends yet! Add someone to challenge them.</p>}
+        {friends.length === 0 && <p className="no-friends">No friends yet!</p>}
       </div>
-
-      <div className="my-friend-code">
-        <p>Your username: <strong>{currentProfile?.username}</strong></p>
-        <p className="hint">Share this with friends to let them add you!</p>
-      </div>
-
+      <div className="my-friend-code"><p>Your username: <strong>{currentProfile?.username}</strong></p><p className="hint">Share with friends!</p></div>
       <button className="back-btn" onClick={() => setScreen('map')}>← Back to Map</button>
     </div>
   )
@@ -291,10 +324,7 @@ function App() {
       <div className="leaderboard-list">
         {leaderboard.map((entry, idx) => (
           <div key={idx} className={`leaderboard-entry ${currentProfile?.username === entry.username ? 'highlight' : ''}`}>
-            <span className="rank">#{idx + 1}</span>
-            <span className="avatar">{entry.avatar}</span>
-            <span className="name">{entry.username}</span>
-            <span className="score">{entry.score}</span>
+            <span className="rank">#{idx + 1}</span><span className="avatar">{entry.avatar}</span><span className="name">{entry.username}</span><span className="score">{entry.score}</span>
           </div>
         ))}
         {leaderboard.length === 0 && <p className="no-scores">No scores yet!</p>}
@@ -311,10 +341,7 @@ function App() {
         <button className="back-btn" onClick={backToMap}>← Map</button>
         <h1>Boxout</h1>
         <div className="level-display">Level {level}</div>
-        <div className="level-info">
-          {gridSize}×{gridSize} grid • Best: {personalBest}
-          {challengeTarget && challengeScore > 0 && <span className="challenge-score"> • Beat {challengeTarget.username}: {challengeScore}</span>}
-        </div>
+        <div className="level-info">{gridSize}×{gridSize} grid • Best: {personalBest}{challengeTarget && challengeScore > 0 && <span className="challenge-score"> • Beat {challengeTarget.username}: {challengeScore}</span>}</div>
         <div className="score-display">
           <span className="score-label">Score</span>
           <span className="score-value">{score}</span>
@@ -324,10 +351,11 @@ function App() {
         {status === 'playing' && (
           <div className={`board ${animationState}`} style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}>
             {board.flat().map((block, idx) => {
-              const isValid = block && validMoves.has(block.id)
+              const isValid = block && block.block_type === 'destructor' && hasAdjacentSameColor(board, block.row, block.col)
+              const isHovered = hoveredBlock === block?.id
               return (
                 <div key={block?.id || `empty-${idx}`}
-                  className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${isValid ? 'valid-move' : ''} ${hoveredBlock === block?.id && isValid ? 'hovered' : ''}`}
+                  className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${isValid ? 'valid-move' : ''} ${isHovered && isValid ? 'hovered' : ''}`}
                   style={{ backgroundColor: getBlockColor(block) }}
                   onClick={() => handleClick(block)}
                   onMouseEnter={() => setHoveredBlock(block?.id)}
