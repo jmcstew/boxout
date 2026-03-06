@@ -69,34 +69,50 @@ def get_difficulty_for_level(level: int) -> dict:
     return {"rows": rows, "cols": cols, "destructor_chance": destructor_chance, "colors": colors}
 
 def generate_winnable_board(level: int, seed: Optional[int] = None) -> List[List[Block]]:
-    if seed: random.seed(seed)
+    if seed is not None:
+        random.seed(seed)
     diff = get_difficulty_for_level(level)
     rows, cols, colors = diff["rows"], diff["cols"], diff["colors"]
     board = [[None for _ in range(cols)] for _ in range(rows)]
+    heights = [0] * cols
     block_id = 0
-    num_destructors = max(3, int(rows * cols * diff["destructor_chance"] * 0.6))
-    for _ in range(num_destructors):
-        attempts = 0
-        placed = False
-        while attempts < 20 and not placed:
-            existing = [(r, c) for r in range(rows) for c in range(cols) if board[r][c] is not None]
-            if existing and random.random() < 0.75:
-                base_r, base_c = random.choice(existing)
-                dr, dc = random.choice([(-1,0),(1,0),(0,-1),(0,1)])
-                r, c = base_r + dr, base_c + dc
-            else:
-                r, c = random.randint(0, rows-1), random.randint(0, cols-1)
-            if 0 <= r < rows and 0 <= c < cols and board[r][c] is None:
-                color = random.choice(colors)
-                board[r][c] = Block(id=block_id, color=color, row=r, col=c, block_type="destructor")
-                block_id += 1
-                placed = True
-            attempts += 1
+    
+    # Keep going until the board is mostly full
+    # We use a while loop to fill column by column from the bottom
+    while any(h < rows for h in heights):
+        available_cols = [c for c in range(cols) if heights[c] < rows]
+        if not available_cols:
+            break
+            
+        # Pick a column for the destructor
+        c = random.choice(available_cols)
+        color = random.choice(colors)
+        
+        # 1. Place the destructor at the bottom of its column
+        r = rows - 1 - heights[c]
+        board[r][c] = Block(id=block_id, color=color, row=r, col=c, block_type="destructor")
+        block_id += 1
+        heights[c] += 1
+        
+        # 2. Add blocks to the left, right, and same columns as fodder
+        # This ensures the destructor always has something of its color to destroy
+        for dc in [-1, 0, 1]:
+            tc = c + dc
+            if 0 <= tc < cols and heights[tc] < rows:
+                tr = rows - 1 - heights[tc]
+                # Only place a block if it's empty
+                if board[tr][tc] is None:
+                    board[tr][tc] = Block(id=block_id, color=color, row=tr, col=tc, block_type="gamepiece")
+                    block_id += 1
+                    heights[tc] += 1
+                    
+    # Fill any remaining gaps just in case
     for r in range(rows):
         for c in range(cols):
             if board[r][c] is None:
                 board[r][c] = Block(id=block_id, color=random.choice(colors), row=r, col=c, block_type="gamepiece")
                 block_id += 1
+                
     return board
 
 def clone_board(board: List[List[Block]]) -> List[List[Optional[Block]]]:
