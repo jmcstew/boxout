@@ -209,7 +209,11 @@ async def root(): return {"message": "Boxout API", "version": "1.0.0"}
 
 @app.post("/api/new-game")
 async def new_game(request: NewGameRequest):
-    board = validate_and_generate(request.level or 1, request.seed)
+    # Use a deterministic seed calculation so each level is always the same for all players
+    # Using a prime multiplier helps spread the seeds out
+    level = request.level or 1
+    seed = (level * 101) + (level * 7)
+    board = validate_and_generate(level, seed)
     return GameState(board=board, score=0, moves=0, status="playing")
 
 @app.post("/api/click")
