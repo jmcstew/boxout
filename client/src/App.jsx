@@ -1,114 +1,108 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import './App.css'
 
 const COLORS = {
-  red: '#E53935',
-  blue: '#1E88E5',
-  yellow: '#FDD835',
-  green: '#43A047',
-  purple: '#8E24AA'
+  red: '#E53935', blue: '#1E88E5', yellow: '#FDD835', green: '#43A047', purple: '#8E24AA'
 }
-
 const DARKER_COLORS = {
-  red: '#B71C1C',
-  blue: '#0D47A1',
-  yellow: '#F9A825',
-  green: '#2E7D32',
-  purple: '#6A1B9A'
+  red: '#B71C1C', blue: '#0D47A1', yellow: '#F9A825', green: '#2E7D32', purple: '#6A1B9A'
 }
-
 const TOTAL_LEVELS = 50
-
 const AVATARS = ['🦊', '🐼', '🦁', '🐯', '🐨', '🐙', '🦄', '🐲', '🦅', '🐙']
 
 let audioCtx = null
+const getAudioContext = () => { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); return audioCtx }
 
-const getAudioContext = () => {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)()
-  return audioCtx
-}
-
-const playSound = (type) => {
+const playSound = (type, enabled) => {
+  if (!enabled) return
   try {
     const ctx = getAudioContext()
     if (ctx.state === 'suspended') ctx.resume()
-    const oscillator = ctx.createOscillator()
-    const gainNode = ctx.createGain()
-    oscillator.connect(gainNode)
-    gainNode.connect(ctx.destination)
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
     switch (type) {
       case 'click':
-        oscillator.frequency.setValueAtTime(440, ctx.currentTime)
-        oscillator.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1)
-        gainNode.gain.setValueAtTime(0.3, ctx.currentTime)
-        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1)
-        oscillator.start(ctx.currentTime)
-        oscillator.stop(ctx.currentTime + 0.1)
+        osc.frequency.setValueAtTime(440, ctx.currentTime)
+        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1)
+        gain.gain.setValueAtTime(0.3, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1)
+        osc.start(ctx.currentTime)
+        osc.stop(ctx.currentTime + 0.1)
         break
       case 'destroy':
-        oscillator.type = 'square'
-        oscillator.frequency.setValueAtTime(200, ctx.currentTime)
-        oscillator.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.3)
-        gainNode.gain.setValueAtTime(0.2, ctx.currentTime)
-        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3)
-        oscillator.start(ctx.currentTime)
-        oscillator.stop(ctx.currentTime + 0.3)
+        osc.type = 'square'
+        osc.frequency.setValueAtTime(200, ctx.currentTime)
+        osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.3)
+        gain.gain.setValueAtTime(0.2, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3)
+        osc.start(ctx.currentTime)
+        osc.stop(ctx.currentTime + 0.3)
         break
       case 'win':
-        [523, 659, 784, 1047].forEach((freq, i) => {
-          const osc = ctx.createOscillator()
-          const gain = ctx.createGain()
-          osc.connect(gain)
-          gain.connect(ctx.destination)
-          osc.frequency.setValueAtTime(freq, ctx.currentTime + i * 0.15)
-          gain.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.15)
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.3)
-          osc.start(ctx.currentTime + i * 0.15)
-          osc.stop(ctx.currentTime + i * 0.15 + 0.3)
+        [523, 659, 784, 1047].forEach((f, i) => {
+          const o = ctx.createOscillator(), g = ctx.createGain()
+          o.connect(g)
+          g.connect(ctx.destination)
+          o.frequency.setValueAtTime(f, ctx.currentTime + i * 0.15)
+          g.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.15)
+          g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.15 + 0.3)
+          o.start(ctx.currentTime + i * 0.15)
+          o.stop(ctx.currentTime + i * 0.15 + 0.3)
         })
         return
       case 'lose':
-        oscillator.type = 'sine'
-        oscillator.frequency.setValueAtTime(300, ctx.currentTime)
-        oscillator.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.5)
-        gainNode.gain.setValueAtTime(0.3, ctx.currentTime)
-        gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5)
-        oscillator.start(ctx.currentTime)
-        oscillator.stop(ctx.currentTime + 0.5)
+        osc.type = 'sine'
+        osc.frequency.setValueAtTime(300, ctx.currentTime)
+        osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.5)
+        gain.gain.setValueAtTime(0.3, ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5)
+        osc.start(ctx.currentTime)
+        osc.stop(ctx.currentTime + 0.5)
         return
-      default:
-        break
     }
   } catch (e) {}
 }
 
-function findValidMoves(board) {
-  if (!board || board.length === 0) return new Set()
-  const validMoves = new Set()
-  const rows = board.length
-  const cols = board[0].length
+// Storage helpers
+const STORAGE_KEYS = { PROFILES: 'boxout_proFILES', PREFERENCES: 'boxout_preferences', LEVEL_SCORES: 'boxout_level_scores' }
+
+const loadFromStorage = (key, fallback) => {
+  try {
+    const data = localStorage.getItem(key)
+    return data ? JSON.parse(data) : fallback
+  } catch { return fallback }
+}
+
+const saveToStorage = (key, data) => {
+  try { localStorage.setItem(key, JSON.stringify(data)) } catch {}
+}
+
+const findValidMoves = (board) => {
+  if (!board?.length) return new Set()
+  const valid = new Set()
+  const [rows, cols] = [board.length, board[0].length]
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const block = board[r]?.[c]
-      if (block && block.block_type === 'destructor') {
-        const directions = [[-1,0],[1,0],[0,-1],[0,1]]
-        for (const [dr, dc] of directions) {
+      const b = board[r]?.[c]
+      if (b?.block_type === 'destructor') {
+        for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
           const adj = board[r+dr]?.[c+dc]
-          if (adj && adj.color === block.color) {
-            validMoves.add(block.id)
-            break
-          }
+          if (adj?.color === b.color) { valid.add(b.id); break }
         }
       }
     }
   }
-  return validMoves
+  return valid
 }
 
 function App() {
-  const [screen, setScreen] = useState('profiles') // profiles, map, game
+  const [screen, setScreen] = useState('profiles')
   const [profiles, setProfiles] = useState([])
   const [currentProfile, setCurrentProfile] = useState(null)
+  const [preferences, setPreferences] = useState({ sound: true, music: true })
+  const [levelScores, setLevelScores] = useState({})
   const [board, setBoard] = useState([])
   const [score, setScore] = useState(0)
   const [moves, setMoves] = useState(0)
@@ -125,29 +119,30 @@ function App() {
   const [newUsername, setNewUsername] = useState('')
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0])
 
+  // Load all saved data on mount
   useEffect(() => {
-    loadProfiles()
+    const savedProfiles = loadFromStorage(STORAGE_KEYS.PROFILES, [])
+    const savedPrefs = loadFromStorage(STORAGE_KEYS.PREFERENCES, { sound: true, music: true })
+    const savedScores = loadFromStorage(STORAGE_KEYS.LEVEL_SCORES, {})
+    setProfiles(savedProfiles)
+    setPreferences(savedPrefs)
+    setLevelScores(savedScores)
   }, [])
 
-  const loadProfiles = () => {
-    const saved = localStorage.getItem('boxout_profiles')
-    if (saved) {
-      const data = JSON.parse(saved)
-      setProfiles(data)
-    }
-  }
+  // Auto-save preferences
+  useEffect(() => { saveToStorage(STORAGE_KEYS.PREFERENCES, preferences) }, [preferences])
+  useEffect(() => { saveToStorage(STORAGE_KEYS.LEVEL_SCORES, levelScores) }, [levelScores])
 
+  // Save profiles
   const saveProfiles = (newProfiles) => {
-    localStorage.setItem('boxout_profiles', JSON.stringify(newProfiles))
+    saveToStorage(STORAGE_KEYS.PROFILES, newProfiles)
     setProfiles(newProfiles)
   }
 
   const createProfile = () => {
     if (!newUsername.trim()) return
     const newProfile = {
-      id: Date.now(),
-      username: newUsername.trim(),
-      avatar: selectedAvatar,
+      id: Date.now(), username: newUsername.trim(), avatar: selectedAvatar,
       stats: { played: 0, won: 0, lost: 0, highScore: 0 },
       progress: { maxUnlocked: 1, completed: {} }
     }
@@ -164,71 +159,54 @@ function App() {
 
   const deleteProfile = (id) => {
     saveProfiles(profiles.filter(p => p.id !== id))
-    if (currentProfile?.id === id) {
-      setCurrentProfile(null)
-      setScreen('profiles')
-    }
+    if (currentProfile?.id === id) { setCurrentProfile(null); setScreen('profiles') }
   }
 
-  const updateStats = (newStats) => {
+  const updateProfileStats = (newStats) => {
     if (!currentProfile) return
     const updated = { ...currentProfile, stats: newStats, progress: { maxUnlocked, completed: completedLevels } }
     saveProfiles(profiles.map(p => p.id === updated.id ? updated : p))
     setCurrentProfile(updated)
   }
 
+  // Update high scores per level
   useEffect(() => {
     if (status === 'won' && currentProfile) {
       const newStats = { ...currentProfile.stats, played: currentProfile.stats.played + 1, won: currentProfile.stats.won + 1, highScore: Math.max(currentProfile.stats.highScore, score) }
-      updateStats(newStats)
+      updateProfileStats(newStats)
+      // Save level high score
+      setLevelScores(prev => ({ ...prev, [level]: Math.max(prev[level] || 0, score) }))
     }
     if (status === 'lost' && currentProfile) {
       const newStats = { ...currentProfile.stats, played: currentProfile.stats.played + 1, lost: currentProfile.stats.lost + 1 }
-      updateStats(newStats)
+      updateProfileStats(newStats)
     }
   }, [status])
 
   useEffect(() => {
-    if (status === 'won') playSound('win')
-    if (status === 'lost') playSound('lose')
+    if (status === 'won') playSound('win', preferences.sound)
+    if (status === 'lost') playSound('lose', preferences.sound)
   }, [status])
 
-  useEffect(() => {
-    setValidMoves(findValidMoves(board))
-  }, [board])
+  useEffect(() => { setValidMoves(findValidMoves(board)) }, [board])
 
-  const getGridSize = (lvl) => {
-    if (lvl <= 10) return 8
-    if (lvl <= 25) return 9
-    return 10
-  }
+  const getGridSize = (lvl) => lvl <= 10 ? 8 : lvl <= 25 ? 9 : 10
 
   const startLevel = (lvl) => {
     if (lvl > maxUnlocked) return
-    setLevel(lvl)
-    setGridSize(getGridSize(lvl))
-    newGame(lvl)
-    setScreen('game')
+    setLevel(lvl); setGridSize(getGridSize(lvl)); newGame(lvl); setScreen('game')
   }
 
   const newGame = async (lvl = level) => {
     try {
-      const response = await fetch('/api/new-game', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch('/api/new-game', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ level: lvl })
       })
-      const data = await response.json()
-      setBoard(data.board)
-      setScore(data.score)
-      setMoves(data.moves)
-      setStatus(data.status)
-      setMessage('')
-      setAnimationState('idle')
-      setLastPoints(0)
-    } catch (err) {
-      setMessage('Backend not running')
-    }
+      const data = await res.json()
+      setBoard(data.board); setScore(data.score); setMoves(data.moves); setStatus(data.status)
+      setMessage(''); setAnimationState('idle'); setLastPoints(0)
+    } catch { setMessage('Backend not running') }
   }
 
   const backToMap = () => {
@@ -240,71 +218,46 @@ function App() {
   }
 
   const nextLevel = () => {
-    if (level + 1 <= TOTAL_LEVELS) {
-      const nextLvl = level + 1
-      setLevel(nextLvl)
-      setGridSize(getGridSize(nextLvl))
-      newGame(nextLvl)
-    }
+    if (level + 1 <= TOTAL_LEVELS) { setLevel(level + 1); setGridSize(getGridSize(level + 1)); newGame(level + 1) }
   }
 
   const handleLevelComplete = () => {
-    const newCompleted = { ...completedLevels, [level]: true }
-    setCompletedLevels(newCompleted)
-    const nextUnlocked = Math.max(maxUnlocked, level + 1)
-    setMaxUnlocked(nextUnlocked)
+    setCompletedLevels(prev => ({ ...prev, [level]: true }))
+    setMaxUnlocked(prev => Math.max(prev, level + 1))
   }
 
   const handleClick = async (block) => {
     if (!block || block.block_type !== 'destructor' || status !== 'playing' || animationState !== 'idle') return
     if (!validMoves.has(block.id)) return
-    
-    playSound('click')
-    
+    playSound('click', preferences.sound)
     try {
-      const response = await fetch('/api/click', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch('/api/click', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ block_id: block.id, current_state: { board, score, moves } })
       })
-      const data = await response.json()
-      
+      const data = await res.json()
       if (data.error) { setMessage(data.error); return }
-      
       setLastPoints(data.score - score)
       setAnimationState('destroying')
-      
       setTimeout(() => {
-        playSound('destroy')
-        setBoard(data.board)
-        setScore(data.score)
-        setMoves(data.moves)
-        
+        playSound('destroy', preferences.sound)
+        setBoard(data.board); setScore(data.score); setMoves(data.moves)
         if (data.status === 'won') handleLevelComplete()
-        
-        setStatus(data.status)
-        setMessage('')
+        setStatus(data.status); setMessage('')
         setAnimationState('falling')
-        
-        setTimeout(() => {
-          setAnimationState('idle')
-          setLastPoints(0)
-        }, 350)
+        setTimeout(() => { setAnimationState('idle'); setLastPoints(0) }, 350)
       }, 300)
-    } catch (err) { setMessage('Error') }
+    } catch { setMessage('Error') }
   }
 
-  const getBlockColor = (block) => {
-    if (!block) return 'transparent'
-    return (block.block_type === 'destructor' ? DARKER_COLORS : COLORS)[block.color]
-  }
+  const getBlockColor = (b) => b ? (b.block_type === 'destructor' ? DARKER_COLORS : COLORS)[b.color] : 'transparent'
 
-  // Profile Selection Screen
+  const toggleSound = () => setPreferences(p => ({ ...p, sound: !p.sound }))
+
   const renderProfiles = () => (
     <div className="profile-screen">
       <h1>Boxout</h1>
       <p className="subtitle">Who's Playing?</p>
-      
       <div className="profile-list">
         {profiles.map(p => (
           <div key={p.id} className="profile-card" onClick={() => selectProfile(p)}>
@@ -313,11 +266,10 @@ function App() {
               <span className="profile-name">{p.username}</span>
               <span className="profile-stats">High Score: {p.stats.highScore}</span>
             </div>
-            <button className="delete-btn" onClick={(e) => { e.stopPropagation(); deleteProfile(p.id) }}>×</button>
+            <button className="delete-btn" onClick={e => { e.stopPropagation(); deleteProfile(p.id) }}>×</button>
           </div>
         ))}
       </div>
-      
       <div className="create-profile">
         <h3>New Profile</h3>
         <div className="avatar-select">
@@ -337,23 +289,20 @@ function App() {
         <span className="profile-avatar small">{currentProfile?.avatar}</span>
         <span>{currentProfile?.username}</span>
         <span className="high-score">Best: {currentProfile?.stats.highScore}</span>
+        <button className="sound-btn" onClick={toggleSound}>{preferences.sound ? '🔊' : '🔇'}</button>
       </div>
       <h1>Boxout</h1>
       <p className="map-subtitle">Select a Level</p>
       <div className="level-nodes">
-        {Array.from({ length: TOTAL_LEVELS }, (_, i) => i + 1).map(lvl => {
-          const isCompleted = completedLevels[lvl]
-          const isCurrent = level === lvl && screen === 'game'
-          const isUnlocked = lvl <= maxUnlocked
-          return (
-            <button key={lvl} className={`level-node ${isCompleted ? 'completed' : ''} ${isCurrent ? 'current' : ''} ${!isUnlocked ? 'locked' : ''}`}
-              onClick={() => startLevel(lvl)} disabled={!isUnlocked}>
-              {isCompleted ? '✓' : lvl}
-            </button>
-          )
-        })}
+        {Array.from({ length: TOTAL_LEVELS }, (_, i) => i + 1).map(lvl => (
+          <button key={lvl} className={`level-node ${completedLevels[lvl] ? 'completed' : ''} ${level === lvl && screen === 'game' ? 'current' : ''} ${lvl > maxUnlocked ? 'locked' : ''}`}
+            onClick={() => startLevel(lvl)} disabled={lvl > maxUnlocked}>
+            {completedLevels[lvl] ? '✓' : lvl}
+            {levelScores[lvl] > 0 && <span className="level-score">{levelScores[lvl]}</span>}
+          </button>
+        ))}
       </div>
-      <button className="back-btn" onClick={() => { setScreen('profiles') }}>Switch Profile</button>
+      <button className="back-btn" onClick={() => setScreen('profiles')}>Switch Profile</button>
     </div>
   )
 
@@ -363,24 +312,20 @@ function App() {
       <h1>Boxout</h1>
       <div className="level-display">Level {level}</div>
       <div className="level-info">{gridSize}×{gridSize} grid</div>
-      
       <div className="score-display">
         <span className="score-label">Score</span>
         <span className="score-value">{score}</span>
         {lastPoints > 0 && <span className="points-popup">+{lastPoints}</span>}
       </div>
-      
       {message && <div className="message">{message}</div>}
-      
       {status === 'playing' && (
         <div className={`board ${animationState}`} style={{ gridTemplateColumns: `repeat(${gridSize}, 1fr)` }}>
           {board.flat().map((block, idx) => {
             const isValid = block && validMoves.has(block.id)
-            const isHovered = hoveredBlock === block?.id
             return (
-              <div key={block?.id || `empty-${idx}`} 
-                className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${isValid ? 'valid-move' : ''} ${isHovered && isValid ? 'hovered' : ''}`}
-                style={{ backgroundColor: getBlockColor(block) }} 
+              <div key={block?.id || `empty-${idx}`}
+                className={`cell ${block ? 'filled' : 'empty'} ${block?.block_type || ''} ${isValid ? 'valid-move' : ''} ${hoveredBlock === block?.id && isValid ? 'hovered' : ''}`}
+                style={{ backgroundColor: getBlockColor(block) }}
                 onClick={() => handleClick(block)}
                 onMouseEnter={() => setHoveredBlock(block?.id)}
                 onMouseLeave={() => setHoveredBlock(null)}
@@ -389,21 +334,15 @@ function App() {
           })}
         </div>
       )}
-      
       {status === 'won' && (
         <div className="overlay victory">
           <div className="confetti">🎊</div>
           <h2>Level Complete!</h2>
           <p className="final-score">Score: {score}</p>
           <p>Moves: {moves}</p>
-          {level < TOTAL_LEVELS ? (
-            <button onClick={nextLevel} className="new-game-btn next-level-btn">Next Level →</button>
-          ) : (
-            <button onClick={backToMap} className="new-game-btn">All Levels Complete!</button>
-          )}
+          {level < TOTAL_LEVELS ? <button onClick={nextLevel} className="new-game-btn next-level-btn">Next Level →</button> : <button onClick={backToMap} className="new-game-btn">All Levels Complete!</button>}
         </div>
       )}
-      
       {status === 'lost' && (
         <div className="overlay gameover">
           <h2>💀 Game Over</h2>
